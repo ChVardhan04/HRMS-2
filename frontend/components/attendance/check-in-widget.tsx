@@ -97,7 +97,7 @@ export function CheckInWidget() {
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                   Before checkout: resolve{' '}
                   {eod?.pending ?? 0} pending task(s) and
-                  submit today's DPR. Completed tasks need
+                  submit today&apos;s DPR. Completed tasks need
                   screenshot proof; incomplete tasks need a
                   valid reason.
                 </div>

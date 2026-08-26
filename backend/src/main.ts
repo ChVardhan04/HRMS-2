@@ -27,26 +27,29 @@ async function bootstrap() {
 
   const apiPrefix = process.env.API_PREFIX ?? 'api/v1';
 
-app.setGlobalPrefix(apiPrefix);
+  app.setGlobalPrefix(apiPrefix);
 
-app.useGlobalPipes(
-  new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    transformOptions: {
-      enableImplicitConversion: true,
-    },
-  }),
-);
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
 
-app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(new HttpExceptionFilter());
 
-const port = Number(process.env.PORT) || 3000;
+  const port = Number(process.env.PORT) || 3000;
 
-console.log(`Attempting to start HRMS backend on port ${port}`);
-console.log(`Render PORT value: ${process.env.PORT}`);
+  console.log(`Attempting to start HRMS backend on port ${port}`);
+  console.log(`Render PORT value: ${process.env.PORT}`);
 
-await app.listen(port, '0.0.0.0');
+  await app.listen(port, '0.0.0.0');
 
-console.log(`HRMS backend running on port ${port}`);
+  console.log(`HRMS backend running on port ${port}`);
+}
+
+bootstrap();

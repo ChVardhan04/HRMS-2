@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -8,10 +9,12 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+
 import {
   CurrentUser,
   AuthenticatedUser,
 } from "../common/decorators/current-user.decorator";
+
 import { DocumentsService } from "./documents.service";
 
 @Controller("employees/:employeeId/documents")
@@ -29,7 +32,9 @@ export class DocumentsController {
   @Post()
   @UseInterceptors(
     FileInterceptor("file", {
-      limits: { fileSize: 10 * 1024 * 1024 },
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
       fileFilter: (_req, file, cb) => {
         const allowed = [
           "application/pdf",
@@ -38,6 +43,7 @@ export class DocumentsController {
           "application/msword",
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         ];
+
         cb(null, allowed.includes(file.mimetype));
       },
     }),
@@ -66,5 +72,14 @@ export class DocumentsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.documents.download(employeeId, documentId, user);
+  }
+
+  @Delete(":documentId")
+  delete(
+    @Param("employeeId") employeeId: string,
+    @Param("documentId") documentId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.documents.delete(employeeId, documentId, user);
   }
 }

@@ -1,0 +1,1053 @@
+// HRMS + ATS — Prisma schema
+// Core architecture: Employee -> WorkDay (1/day) -> Attendance + Todo[] + DPR -> KRA -> Strike
+// WorkDay is the join entity that keeps Attendance, To-Do and DPR in sync. Never model them as
+// independent silos — see backend/src/workday for the sync engine that enforces this.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum RoleName {
+  EMPLOYEE
+  MANAGER
+  HR_ADMIN
+  HIRING_MANAGER
+  FINANCE
+  LEADERSHIP
+  SUPER_ADMIN
+}
+
+enum EmploymentStatus {
+  PROBATION
+  CONFIRMED
+  NOTICE_PERIOD
+  EXITED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+}
+
+enum SaturdayWorkPattern {
+  FIRST_THIRD_WORKING
+  ALL_SATURDAYS_WORKING
+  ALL_SATURDAYS_OFF
+  SECOND_FOURTH_WORKING
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  LATE
+  ON_LEAVE
+  WORK_FROM_HOME
+  HOLIDAY
+  WEEKEND
+}
+
+
+enum AttendanceSource {
+  WEB
+  MOBILE_GPS
+  BIOMETRIC_IMPORT
+  MANUAL_REGULARISATION
+  SYSTEM_AUTO_ABSENT
+}
+
+enum DprStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  NEEDS_CHANGES
+}
+
+enum TodoStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  OVERDUE
+}
+
+enum TodoPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TodoEodStatus {
+  PENDING
+  COMPLETED
+  INCOMPLETE
+}
+
+enum LeaveStatus {
+  PENDING
+  MANAGER_APPROVED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum JobStatus {
+  DRAFT
+  PENDING_APPROVAL
+  OPEN
+  ON_HOLD
+  CLOSED
+}
+
+enum CandidateStage {
+  SOURCED
+  APPLIED
+  RESUME_SCREEN
+  HR_SCREEN
+  TECHNICAL_ROUND
+  MANAGER_ROUND
+  OFFER
+  JOINED
+  REJECTED
+  WITHDRAWN
+  ON_HOLD
+}
+
+enum CandidateSource {
+  CAREERS_PAGE
+  NAUKRI
+  INDEED
+  LINKEDIN
+  REFERRAL
+  AGENCY
+  EMAIL_INBOUND
+  OTHER
+}
+
+enum InterviewOutcome {
+  PENDING
+  SELECTED
+  REJECTED
+  NO_SHOW
+  RESCHEDULE
+}
+
+enum GroupPlatform {
+  WHATSAPP
+  SLACK
+  MS_TEAMS
+  OTHER
+}
+
+enum StrikeStatus {
+  ACTIVE
+  RESOLVED
+  EXPIRED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  SLACK
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum IntegrationProvider {
+  NAUKRI
+  INDEED
+  LINKEDIN
+  GOOGLE_CALENDAR
+  SLACK
+  MS_TEAMS
+  SMTP
+  SENDGRID
+  TWILIO
+  BIOMETRIC_DEVICE
+  JIRA
+  GITHUB
+}
+
+enum IntegrationStatus {
+  NOT_CONFIGURED
+  CONFIGURED
+  ERROR
+  DISABLED
+}
+
+// ---------------------------------------------------------------------------
+// Identity, RBAC, Org structure
+// ---------------------------------------------------------------------------
+
+model User {
+  id                 String    @id @default(uuid())
+  email              String    @unique
+  passwordHash       String
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
+
+  roles           UserRole[]
+  employee        Employee?
+  refreshTokens   RefreshToken[]
+  passwordResets  PasswordResetToken[]
+  activationTokens AccountActivationToken[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+}
+
+model Role {
+  id          String     @id @default(uuid())
+  name        RoleName   @unique
+  description String?
+  permissions Permission[]
+  users       UserRole[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Permission {
+  id       String @id @default(uuid())
+  resource String // e.g. "employee", "dpr", "candidate"
+  action   String // e.g. "create", "read", "update", "delete", "approve"
+  roles    Role[]
+
+  @@unique([resource, action])
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  ipAddress String?
+  userAgent String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AccountActivationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model Organization {
+  id        String       @id @default(uuid())
+  name      String
+  domain    String?      @unique
+  timezone  String       @default("Asia/Kolkata")
+  officeStartMinutes Int @default(570)
+  officeEndMinutes Int @default(1140)
+  lunchStartMinutes Int @default(810)
+  lunchEndMinutes Int @default(840)
+  lateGraceMinutes Int @default(0)
+  attendanceCallStartMinutes Int @default(555)
+  attendanceCallEndMinutes Int @default(570)
+  attendanceAbsenceCutoffMinutes Int @default(720)
+  dprSlaMinutes Int @default(1320)
+  dprReminder1Minutes Int @default(1080)
+  dprReminder2Minutes Int @default(1200)
+  kraStrikeThresholdScore Int @default(80)
+  kraRollingWindowMonths Int @default(6)
+  kraStrikesToEscalate Int @default(3)
+  saturdayWorkPattern SaturdayWorkPattern @default(FIRST_THIRD_WORKING)
+  departments Department[]
+  holidays  Holiday[]
+  policies  Policy[]
+  leaveTypes LeaveType[]
+  kraTemplates KRATemplate[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Department {
+  id             String       @id @default(uuid())
+  name           String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  employees      Employee[]
+  designations   Designation[]
+  deletedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, name])
+}
+
+model Designation {
+  id           String     @id @default(uuid())
+  title        String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  employees    Employee[]
+  deletedAt    DateTime?
+
+  @@unique([departmentId, title])
+}
+
+model Holiday {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  date           DateTime
+  isOptional     Boolean      @default(false)
+
+  @@unique([organizationId, date, name])
+}
+
+// ---------------------------------------------------------------------------
+// Employee Management
+// ---------------------------------------------------------------------------
+
+model Employee {
+  id               String            @id @default(uuid())
+  employeeCode     String            @unique
+  userId           String            @unique
+  user             User              @relation(fields: [userId], references: [id])
+  firstName        String
+  lastName         String
+  personalEmail    String?
+  phone            String?
+  dateOfBirth      DateTime?
+  dateOfJoining    DateTime
+  employmentType   EmploymentType    @default(FULL_TIME)
+  employmentStatus EmploymentStatus  @default(PROBATION)
+  departmentId     String?
+  department       Department?       @relation(fields: [departmentId], references: [id])
+  designationId    String?
+  designation      Designation?      @relation(fields: [designationId], references: [id])
+  managerId        String?
+  manager          Employee?         @relation("ManagerReports", fields: [managerId], references: [id])
+  reports          Employee[]        @relation("ManagerReports")
+  skipLevelManagerId String?
+  skipLevelManager Employee?        @relation("SkipLevelReports", fields: [skipLevelManagerId], references: [id])
+  skipLevelReports Employee[]       @relation("SkipLevelReports")
+  location         String?
+  monthlySalary    Decimal?          @db.Decimal(12, 2)
+  salaryCurrency   String             @default("INR")
+  payrollEligible  Boolean            @default(true)
+  exitDate         DateTime?
+  deletedAt        DateTime?
+
+  documents        Document[]
+  policyAcknowledgements PolicyAcknowledgement[]
+  leaveBalances     LeaveBalance[]
+  leaveRequests     LeaveRequest[]   @relation("LeaveRequester")
+  approvedLeaves    LeaveRequest[]   @relation("LeaveApprover")
+  workDays          WorkDay[]
+  assignedTodos     Todo[]           @relation("TodoAssignee")
+  createdTodos      Todo[]           @relation("TodoCreator")
+  dprReviews        DPR[]            @relation("DprReviewer")
+  kraScores         KRAScore[]
+  strikes           Strike[]
+  recruiterFor      Candidate[]      @relation("CandidateRecruiter")
+  hiringManagerFor  Candidate[]      @relation("CandidateHiringManager")
+  candidateActivities CandidateActivity[]
+  atsScreenings       AtsScreeningResult[]
+  interviewsPanel   InterviewPanelist[]
+  groupsOwned       CommunicationGroup[]
+  groupChecks       GroupCheckLog[]
+  groupMemberships  GroupMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([managerId])
+  @@index([departmentId])
+  @@index([employmentStatus])
+}
+
+model Document {
+  id         String   @id @default(uuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  type       String   // OFFER_LETTER, ID_PROOF, POLICY_ACK, RESUME, OTHER
+  fileName   String
+  storageKey String
+  version    Int      @default(1)
+  uploadedBy String?
+  expiresAt  DateTime?
+
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// WorkDay — the sync-hub entity (Attendance <-> Todo <-> DPR)
+// ---------------------------------------------------------------------------
+
+model WorkDay {
+  id                String    @id @default(uuid())
+  employeeId        String
+  employee          Employee  @relation(fields: [employeeId], references: [id])
+  date              DateTime  @db.Date
+
+  attendanceStatus  AttendanceStatus @default(ABSENT)
+  checkInAt         DateTime?
+  checkOutAt        DateTime?
+  workingHours       Decimal?  @db.Decimal(5, 2)
+  isLate            Boolean   @default(false)
+  isEarlyDeparture  Boolean   @default(false)
+
+  totalLoggedHours  Decimal   @default(0) @db.Decimal(5, 2)
+  dprStatus         DprStatus @default(DRAFT)
+
+  attendanceRecords AttendanceRecord[]
+  todos             Todo[]
+  dpr               DPR?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model AttendanceRecord {
+  id         String            @id @default(uuid())
+  workDayId  String
+  workDay    WorkDay           @relation(fields: [workDayId], references: [id])
+  type       String            // CHECK_IN | CHECK_OUT | REGULARISATION
+  status     AttendanceStatus
+  source     AttendanceSource
+  timestamp  DateTime
+  latitude   Decimal?          @db.Decimal(9, 6)
+  longitude  Decimal?          @db.Decimal(9, 6)
+  ipAddress  String?
+  note       String?
+  approvedBy String?
+
+  createdAt DateTime @default(now())
+
+  @@index([workDayId])
+}
+
+// ---------------------------------------------------------------------------
+// To-Do / Task Management
+// ---------------------------------------------------------------------------
+
+model Todo {
+  id             String       @id @default(uuid())
+  title          String
+  description    String?
+  assigneeId     String
+  assignee       Employee     @relation("TodoAssignee", fields: [assigneeId], references: [id])
+  creatorId      String
+  creator        Employee     @relation("TodoCreator", fields: [creatorId], references: [id])
+  workDayId      String?
+  workDay        WorkDay?     @relation(fields: [workDayId], references: [id])
+  project        String?
+  priority       TodoPriority @default(MEDIUM)
+  status         TodoStatus   @default(PENDING)
+  dueDate        DateTime?
+  estimatedHours Decimal?     @db.Decimal(5, 2)
+  actualHours    Decimal?     @db.Decimal(5, 2)
+  completedAt    DateTime?
+  includedInDpr  Boolean      @default(false)
+  eodStatus      TodoEodStatus @default(PENDING)
+  incompleteReason String?
+  completionOutputSummary String?
+  completionProofStorageKey String?
+  completionProofFileName String?
+  completionProofMimeType String?
+  completionProofSubmittedAt DateTime?
+  aiCompletionPercent Decimal? @db.Decimal(5, 2)
+  aiCompletionAnalysis Json?
+  aiAnalyzedAt DateTime?
+  eodResolvedAt DateTime?
+
+  comments    TodoComment[]
+  attachments TodoAttachment[]
+  dprEntries  DPREntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assigneeId, status])
+  @@index([workDayId])
+}
+
+model TodoComment {
+  id        String   @id @default(uuid())
+  todoId    String
+  todo      Todo     @relation(fields: [todoId], references: [id])
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+}
+
+model TodoAttachment {
+  id         String   @id @default(uuid())
+  todoId     String
+  todo       Todo     @relation(fields: [todoId], references: [id])
+  fileName   String
+  storageKey String
+  createdAt  DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// DPR — Daily Progress Report
+// ---------------------------------------------------------------------------
+
+model DPR {
+  id            String    @id @default(uuid())
+  workDayId     String    @unique
+  workDay       WorkDay   @relation(fields: [workDayId], references: [id])
+  status        DprStatus @default(DRAFT)
+  submittedAt   DateTime?
+  reviewedAt    DateTime?
+  reviewerId    String?
+  reviewer      Employee? @relation("DprReviewer", fields: [reviewerId], references: [id])
+  reviewComment String?
+  qualityScore  Decimal?  @db.Decimal(4, 1) // 0-10, feeds KRA "DPR quality"
+  hasMismatchFlag Boolean @default(false)
+  mismatchNotes String?
+  lockedAt      DateTime?  // set once approved; edits after this require unlock
+  unlockedById  String?
+  unlockedAt    DateTime?
+  unlockReason  String?
+
+  entries DPREntry[]
+  auditTrail DPRAuditEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DPREntry {
+  id          String   @id @default(uuid())
+  dprId       String
+  dpr         DPR      @relation(fields: [dprId], references: [id])
+  todoId      String?
+  todo        Todo?    @relation(fields: [todoId], references: [id])
+  project     String?
+  description String
+  hours       Decimal  @db.Decimal(5, 2)
+  output      String?
+  blocker     String?
+  tomorrowPlan String?
+  isManualEntry Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DPRAuditEntry {
+  id        String   @id @default(uuid())
+  dprId     String
+  dpr       DPR      @relation(fields: [dprId], references: [id])
+  action    String   // SUBMITTED | APPROVED | REJECTED | NEEDS_CHANGES | EDITED_AFTER_APPROVAL | UNLOCKED
+  actorId   String
+  detail    String?
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Leave Management
+// ---------------------------------------------------------------------------
+
+model LeaveType {
+  id               String   @id @default(uuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  code             String   @unique // CL, SL, EL, WFH, UNPAID, MATERNITY, PATERNITY, COMP_OFF
+  name             String
+  accrualPerMonth  Decimal  @default(0) @db.Decimal(4, 2)
+  carryForwardCap  Decimal? @db.Decimal(4, 2)
+  requiresApprovalChain Boolean @default(true)
+  isPaid           Boolean  @default(true)
+
+  balances LeaveBalance[]
+  requests LeaveRequest[]
+
+  @@index([organizationId])
+}
+
+model LeaveBalance {
+  id           String    @id @default(uuid())
+  employeeId   String
+  employee     Employee  @relation(fields: [employeeId], references: [id])
+  leaveTypeId  String
+  leaveType    LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year         Int
+  accrued      Decimal   @default(0) @db.Decimal(5, 2)
+  used         Decimal   @default(0) @db.Decimal(5, 2)
+  carriedForward Decimal @default(0) @db.Decimal(5, 2)
+  lastAccruedAt DateTime?
+
+  @@unique([employeeId, leaveTypeId, year])
+}
+
+model LeaveRequest {
+  id           String      @id @default(uuid())
+  employeeId   String
+  employee     Employee    @relation("LeaveRequester", fields: [employeeId], references: [id])
+  leaveTypeId  String
+  leaveType    LeaveType   @relation(fields: [leaveTypeId], references: [id])
+  startDate    DateTime    @db.Date
+  endDate      DateTime    @db.Date
+  numberOfDays Decimal     @db.Decimal(4, 1)
+  reason       String?
+  status       LeaveStatus @default(PENDING)
+  managerId    String?
+  manager      Employee?   @relation("LeaveApprover", fields: [managerId], references: [id])
+  managerActionAt DateTime?
+  hrActionAt   DateTime?
+  rejectionReason String?
+  cancelledAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, status])
+}
+
+// ---------------------------------------------------------------------------
+// HR Policy & Acknowledgement
+// ---------------------------------------------------------------------------
+
+model Policy {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  title          String
+  description    String?
+  version        Int      @default(1)
+  documentId     String?
+  fileName       String?
+  storageKey     String?
+  effectiveFrom  DateTime?
+  publishedAt   DateTime?
+  isActive       Boolean  @default(true)
+  acknowledgements PolicyAcknowledgement[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, isActive])
+}
+
+model PolicyAcknowledgement {
+  id         String   @id @default(uuid())
+  policyId   String
+  policy     Policy   @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  policyVersion Int
+  acknowledgedAt DateTime @default(now())
+  ipAddress  String?
+
+  @@unique([policyId, employeeId])
+}
+
+// ---------------------------------------------------------------------------
+// ATS — Applicant Tracking System
+// ---------------------------------------------------------------------------
+
+model JobRequisition {
+  id           String    @id @default(uuid())
+  title        String
+  departmentName String?
+  skillsRequired String[]
+  seniority    String?
+  ctcBandMin   Decimal?  @db.Decimal(12, 2)
+  ctcBandMax   Decimal?  @db.Decimal(12, 2)
+  headcount    Int       @default(1)
+  jobDescription String?
+  status       JobStatus @default(DRAFT)
+  requestedById String
+  approvedById  String?
+  hrApprovedById String?
+  financeApprovedById String?
+  leadershipApprovedById String?
+  postings     JobPosting[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model JobPosting {
+  id             String         @id @default(uuid())
+  requisitionId  String
+  requisition    JobRequisition @relation(fields: [requisitionId], references: [id])
+  publicSlug     String         @unique // used by the built-in careers page
+  isPublished    Boolean        @default(false)
+  publishedAt    DateTime?
+  applications   JobApplication[]
+  screeningResults AtsScreeningResult[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Candidate {
+  id               String          @id @default(uuid())
+  firstName        String
+  lastName         String
+  email            String
+  phone            String?
+  resumeStorageKey String?
+  resumeText      String?
+  skills           String[]
+  experienceYears  Decimal?        @db.Decimal(4, 1)
+  source           CandidateSource @default(CAREERS_PAGE)
+  currentStage     CandidateStage  @default(SOURCED)
+  recruiterId      String?
+  recruiter        Employee?       @relation("CandidateRecruiter", fields: [recruiterId], references: [id])
+  hiringManagerId  String?
+  hiringManager    Employee?       @relation("CandidateHiringManager", fields: [hiringManagerId], references: [id])
+  lastContactedAt  DateTime?
+  nextFollowUpAt   DateTime?
+  isStale          Boolean         @default(false)
+  duplicateOfId    String?
+  duplicateOf      Candidate?      @relation("CandidateDuplicate", fields: [duplicateOfId], references: [id])
+  duplicates       Candidate[]     @relation("CandidateDuplicate")
+  rejectionReason  String?
+
+  applications JobApplication[]
+  activities   CandidateActivity[]
+  screeningResults AtsScreeningResult[]
+  interviews   Interview[]
+  offer        Offer?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([currentStage])
+  @@index([isStale])
+}
+
+model JobApplication {
+  id           String     @id @default(uuid())
+  candidateId  String
+  candidate    Candidate  @relation(fields: [candidateId], references: [id])
+  jobPostingId String
+  jobPosting   JobPosting @relation(fields: [jobPostingId], references: [id])
+  appliedAt    DateTime   @default(now())
+
+  @@unique([candidateId, jobPostingId])
+}
+
+model AtsScreeningResult {
+  id              String       @id @default(uuid())
+  candidateId     String
+  candidate       Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobPostingId    String
+  jobPosting      JobPosting   @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  atsScore        Decimal      @db.Decimal(5, 2)
+  skillsScore     Decimal      @db.Decimal(5, 2)
+  experienceScore Decimal      @db.Decimal(5, 2)
+  educationScore  Decimal      @db.Decimal(5, 2)
+  matchedSkills   String[]
+  missingSkills   String[]
+  recommendation  String
+  resumeText      String?
+  aiAnalysis      Json?
+  screenedById    String?
+  screenedBy      Employee?    @relation(fields: [screenedById], references: [id], onDelete: SetNull)
+  screenedAt      DateTime     @default(now())
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([candidateId, jobPostingId])
+  @@index([jobPostingId, atsScore])
+  @@index([candidateId])
+}
+
+model CandidateActivity {
+  id          String    @id @default(uuid())
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
+  type        String    // CALL, EMAIL, NOTE, STAGE_CHANGE, INTERVIEW_SCHEDULED, FOLLOW_UP_TASK
+  body        String?
+  performedById String?
+  performedBy Employee? @relation(fields: [performedById], references: [id])
+  followUpDueAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([candidateId])
+}
+
+model Interview {
+  id          String            @id @default(uuid())
+  candidateId String
+  candidate   Candidate         @relation(fields: [candidateId], references: [id])
+  round       String            // RESUME_SCREEN, HR_SCREEN, TECHNICAL, MANAGER
+  scheduledAt DateTime
+  durationMin Int               @default(45)
+  outcome     InterviewOutcome  @default(PENDING)
+  panelists   InterviewPanelist[]
+  scorecards  Scorecard[]
+  calendarEventId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InterviewPanelist {
+  id          String    @id @default(uuid())
+  interviewId String
+  interview   Interview @relation(fields: [interviewId], references: [id])
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+
+  @@unique([interviewId, employeeId])
+}
+
+model Scorecard {
+  id            String    @id @default(uuid())
+  interviewId   String
+  interview     Interview @relation(fields: [interviewId], references: [id])
+  submittedById String
+  rating        Int       // 1-5
+  strengths     String?
+  concerns      String?
+  recommendation String   // STRONG_YES | YES | NO | STRONG_NO
+  submittedAt   DateTime  @default(now())
+}
+
+model Offer {
+  id             String    @id @default(uuid())
+  candidateId    String    @unique
+  candidate      Candidate @relation(fields: [candidateId], references: [id])
+  portalToken    String    @unique
+  ctcOffered     Decimal   @db.Decimal(12, 2)
+  designationTitle String
+  joiningDate    DateTime
+  offerLetterStorageKey String?
+  hrApprovedById  String?
+  financeApprovedById String?
+  status         String    @default("DRAFT") // DRAFT, PENDING_APPROVAL, SENT, ACCEPTED, DECLINED
+  sentAt         DateTime?
+  respondedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Group Monitor
+// ---------------------------------------------------------------------------
+
+model CommunicationGroup {
+  id         String        @id @default(uuid())
+  name       String
+  platform   GroupPlatform
+  inviteLink String?
+  ownerId    String
+  owner      Employee      @relation(fields: [ownerId], references: [id])
+  isActive   Boolean       @default(true)
+
+  members    GroupMember[]
+  checkLogs  GroupCheckLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GroupMember {
+  id         String             @id @default(uuid())
+  groupId    String
+  group      CommunicationGroup @relation(fields: [groupId], references: [id])
+  employeeId String?
+  employee   Employee?          @relation(fields: [employeeId], references: [id])
+  externalName String?          // for members not mapped to an Employee record
+  isExEmployeeFlag Boolean      @default(false)
+
+  @@unique([groupId, employeeId])
+}
+
+model GroupCheckLog {
+  id          String             @id @default(uuid())
+  groupId     String
+  group       CommunicationGroup @relation(fields: [groupId], references: [id])
+  checkedById String
+  checkedBy   Employee           @relation(fields: [checkedById], references: [id])
+  checkedAt   DateTime           @default(now())
+  notes       String?
+  escalated   Boolean            @default(false)
+  escalationNote String?
+
+  @@index([groupId, checkedAt])
+}
+
+// ---------------------------------------------------------------------------
+// KRA & Three-Strike Engine
+// ---------------------------------------------------------------------------
+
+model KRATemplate {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  roleName       String       // e.g. "Developer", "Tech Lead", "HR", "All Employees"
+  isDefault      Boolean      @default(false)
+  items          KRAItem[]
+  scores         KRAScore[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model KRAItem {
+  id           String      @id @default(uuid())
+  templateId   String
+  template     KRATemplate @relation(fields: [templateId], references: [id])
+  name         String      // DPR_SUBMISSION, TASK_COMPLETION, ATTENDANCE, DPR_QUALITY, COLLABORATION
+  weightPercent Decimal    @db.Decimal(5, 2)
+  isAutomated  Boolean     @default(true)
+}
+
+model KRAScore {
+  id           String      @id @default(uuid())
+  employeeId   String
+  employee     Employee    @relation(fields: [employeeId], references: [id])
+  templateId   String
+  template     KRATemplate @relation(fields: [templateId], references: [id])
+  periodMonth  Int
+  periodYear   Int
+  breakdown    Json        // { itemName: { weight, achievementPercent, contribution } }
+  finalScore   Decimal     @db.Decimal(5, 2)
+  isFinal      Boolean     @default(false)
+  calculatedAt DateTime    @default(now())
+
+  strikeGenerated Strike?
+
+  @@unique([employeeId, periodMonth, periodYear])
+  @@index([periodYear, periodMonth])
+}
+
+model Strike {
+  id          String       @id @default(uuid())
+  employeeId  String
+  employee    Employee     @relation(fields: [employeeId], references: [id])
+  kraScoreId  String?      @unique
+  kraScore    KRAScore?    @relation(fields: [kraScoreId], references: [id])
+  reason      String
+  status      StrikeStatus @default(ACTIVE)
+  issuedAt    DateTime     @default(now())
+  expiresAt   DateTime     // issuedAt + rolling window (default 6 months)
+  pipTaskCreated Boolean   @default(false)
+
+  @@index([employeeId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id])
+  channel   NotificationChannel
+  title     String
+  body      String
+  status    NotificationStatus  @default(PENDING)
+  category  String              // DPR_REMINDER, DPR_ESCALATION, LEAVE_APPROVAL, STALE_CANDIDATE, GROUP_CHECK, KRA, STRIKE, GENERAL
+  metadata  Json?
+  sentAt    DateTime?
+  readAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Audit & Integrations
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String   // e.g. "employee.update", "dpr.approve", "leave.approve"
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+}
+
+model IntegrationConfig {
+  id         String              @id @default(uuid())
+  provider   IntegrationProvider @unique
+  status     IntegrationStatus   @default(NOT_CONFIGURED)
+  config     Json?               // non-secret config only; secrets live in env vars
+  lastSyncAt DateTime?
+  lastError  String?
+
+  updatedAt DateTime @updatedAt
+}

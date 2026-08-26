@@ -1,9 +1,10 @@
-import "reflect-metadata";
-import { NestFactory } from "@nestjs/core";
-import { ValidationPipe } from "@nestjs/common";
-import helmet from "helmet";
-import { AppModule } from "./app.module";
-import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
+import 'reflect-metadata';
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
+
+import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -13,9 +14,9 @@ async function bootstrap() {
   app.use(helmet());
 
   const corsOrigins = (
-    process.env.CORS_ORIGIN ?? "http://localhost:3000"
+    process.env.CORS_ORIGIN ?? 'http://localhost:3000'
   )
-    .split(",")
+    .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
@@ -24,7 +25,8 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const apiPrefix = process.env.API_PREFIX ?? "api/v1";
+  const apiPrefix = process.env.API_PREFIX ?? 'api/v1';
+
   app.setGlobalPrefix(apiPrefix);
 
   app.useGlobalPipes(
@@ -40,13 +42,13 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const port = process.env.PORT ?? 4000;
+  const port = Number(process.env.PORT) || 3000;
 
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 
   // eslint-disable-next-line no-console
   console.log(
-    `HRMS API listening on http://localhost:${port}/${apiPrefix}`,
+    `HRMS API listening on http://0.0.0.0:${port}/${apiPrefix}`,
   );
 }
 

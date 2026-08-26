@@ -1,42 +1,74 @@
 import { Injectable, Logger } from "@nestjs/common";
-import * as nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { EmailAdapter, SendEmailInput } from "./email-adapter.interface";
 
 @Injectable()
 export class SmtpEmailAdapter implements EmailAdapter {
   private readonly logger = new Logger(SmtpEmailAdapter.name);
-  private transporter: nodemailer.Transporter | null = null;
+  private resend: Resend | null = null;
 
-  private getTransporter() {
-    if (this.transporter) return this.transporter;
-    if (!process.env.SMTP_HOST) return null;
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT ?? 587),
-      auth: process.env.SMTP_USER
-        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
-        : undefined,
-    });
-    return this.transporter;
+  private getResend(): Resend | null {
+    if (this.resend) {
+      return this.resend;
+    }
+
+    const apiKey = process.env.RESEND_API_KEY;
+
+    if (!apiKey) {
+      this.logger.warn(
+        "RESEND_API_KEY is not configured. Email will not be sent.",
+      );
+      return null;
+    }
+
+    this.resend = new Resend(apiKey);
+
+    return this.resend;
   }
 
   async send(input: SendEmailInput): Promise<void> {
-    const transporter = this.getTransporter();
-    if (!transporter) {
-      // No SMTP configured yet — log instead of pretending to send. This keeps local/dev
-      // environments functional without a fake "success" that masks missing configuration.
+    const resend = this.getResend();
+
+    if (!resend) {
       this.logger.warn(
-        `SMTP not configured — email to ${input.to} ("${input.subject}") was NOT sent.`,
+        `Resend not configured - email to ${input.to} ("${input.subject}") was NOT sent.`,
       );
       return;
     }
 
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM ?? "HRMS <no-reply@your-company.com>",
-      to: input.to,
-      subject: input.subject,
-      text: input.body,
-      html: input.html,
-    });
+    const from =
+      process.env.EMAIL_FROM ??
+      process.env.SMTP_FROM ??
+      "HRMS <onboarding@resend.dev>";
+
+    try {
+      const { data, error } = await resend.emails.send({
+        from,
+        to: [input.to],
+        subject: input.subject,
+        html: input.html ?? `<p>${input.body.replace(/\n/g, "<br />")}</p>`,
+        text: input.body,
+      });
+
+      if (error) {
+        this.logger.error(
+          `Failed to send email to ${input.to}: ${error.message}`,
+        );
+
+        throw new Error(error.message);
+      }
+
+      this.logger.log(
+        `Email sent successfully to ${input.to} (id: ${data?.id ?? "unknown"})`,
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to send email to ${input.to}: ${
+          error?.message ?? "Unknown email error"
+        }`,
+      );
+
+      throw error;
+    }
   }
 }

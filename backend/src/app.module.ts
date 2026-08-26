@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { ConfigModule, ConfigService } from "@nestjs/config";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { ScheduleModule } from "@nestjs/schedule";
 import { BullModule } from "@nestjs/bullmq";
@@ -30,25 +30,27 @@ import { RolesGuard } from "./common/guards/roles.guard";
 import { JwtAuthGuard } from "./auth/guards/jwt-auth.guard";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 
-const redisConfigured = Boolean(process.env.REDIS_HOST);
-
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
 
-    ThrottlerModule.forRoot([
-      {
-        ttl: Number(process.env.RATE_LIMIT_TTL ?? 60) * 1000,
-        limit: Number(process.env.RATE_LIMIT_MAX ?? 100),
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          {
+            ttl: Number(config.get<string>("RATE_LIMIT_TTL") ?? 60) * 1000,
+            limit: Number(config.get<string>("RATE_LIMIT_MAX") ?? 100),
+          },
+        ],
+      }),
+    }),
 
     ScheduleModule.forRoot(),
 
-    ...(redisConfigured
-      ? [
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -65,15 +67,13 @@ const redisConfigured = Boolean(process.env.REDIS_HOST);
 
         return {
           connection: {
-            host: config.get<string>("REDIS_HOST", "localhost"),
-            port: config.get<number>("REDIS_PORT", 6379),
+            host: config.get<string>("REDIS_HOST") ?? "localhost",
+            port: Number(config.get<string>("REDIS_PORT") ?? 6379),
             password: config.get<string>("REDIS_PASSWORD") || undefined,
           },
         };
       },
     }),
-        ]
-      : []),
 
     PrismaModule,
     AuditModule,

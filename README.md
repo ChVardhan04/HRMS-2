@@ -1,4 +1,4 @@
-# HRMS + ATS Production Final
+# HRMS
 
 This build follows the agreed HR-owned operating model and the production plan. HR is the single operational owner of employee administration and recruitment. Managers own team task assignment/DPR review/leave approval. Employees own daily work, task evidence, DPR and leave self-service. Finance and Hiring Manager are not active operational roles in this build.
 
@@ -24,12 +24,12 @@ Public careers applications are also automatically screened against the exact jo
 
 Requirements: Node 20+, PostgreSQL and optionally Redis.
 
-1. Copy `backend/.env.example` to `backend/.env` and set the database/JWT/HR values.
-2. Copy `frontend/.env.example` to `frontend/.env.local`.
-3. From the repository root run `npm install`.
-4. Run `cd backend && npx prisma generate`.
-5. For a fresh local database run `npx prisma migrate deploy` followed by `npx prisma db seed`.
-6. Start the app with `npm run dev`.
+
+
+1. From the repository root run `npm install`.
+2. Run `cd backend && npx prisma generate`.
+3. For a fresh local database run `npx prisma migrate deploy` followed by `npx prisma db seed`.
+4. Start the app with `npm run dev`.
 
 ## AI task analysis
 

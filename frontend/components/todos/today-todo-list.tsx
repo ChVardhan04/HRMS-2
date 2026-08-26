@@ -38,7 +38,9 @@ import { api } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
 
 export function TodayTodoList() {
-  const { data: todos, isLoading } = useTodayTodos();
+  // Default todos to an empty array so TypeScript knows .map() is always safe.
+  const { data: todos = [], isLoading } = useTodayTodos();
+
   const { data: workDay } = useTodayWorkDay();
   const { data: eod } = useTodoEodStatus();
   const createTodo = useCreateTodo();
@@ -115,6 +117,7 @@ export function TodayTodoList() {
             className="flex flex-col gap-2"
             onSubmit={(e) => {
               e.preventDefault();
+
               if (!newTitle.trim()) return;
 
               createTodo.mutate(
@@ -182,7 +185,7 @@ export function TodayTodoList() {
 
         {isLoading ? (
           <div className="h-24 animate-pulse rounded-md bg-muted" />
-        ) : checkedIn && !todos?.length ? (
+        ) : checkedIn && !todos.length ? (
           <EmptyState
             icon={ListChecks}
             title="No tasks yet"
@@ -253,6 +256,7 @@ export function TodayTodoList() {
               <p className="font-medium">
                 EOD update: {selected.title}
               </p>
+
               <p className="mt-1 text-xs text-muted-foreground">
                 Choose how the task ended today.
               </p>
@@ -261,6 +265,7 @@ export function TodayTodoList() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>Hours spent</Label>
+
                 <Input
                   type="number"
                   min="0"
@@ -297,6 +302,7 @@ export function TodayTodoList() {
                     <SelectItem value="COMPLETED">
                       Completed
                     </SelectItem>
+
                     <SelectItem value="INCOMPLETE">
                       Incomplete
                     </SelectItem>
@@ -310,6 +316,7 @@ export function TodayTodoList() {
               <>
                 <div>
                   <Label>Completion summary</Label>
+
                   <Textarea
                     value={output}
                     onChange={(e) => setOutput(e.target.value)}
@@ -322,7 +329,9 @@ export function TodayTodoList() {
 
                   <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-3 text-sm">
                     <Upload className="h-4 w-4" />
-                    {proof?.name ?? 'Upload PNG, JPG or WEBP screenshot'}
+
+                    {proof?.name ??
+                      'Upload PNG, JPG or WEBP screenshot'}
 
                     <input
                       hidden
@@ -338,6 +347,7 @@ export function TodayTodoList() {
             ) : (
               <div>
                 <Label>Valid reason for incomplete task</Label>
+
                 <Textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -369,7 +379,10 @@ export function TodayTodoList() {
                 Save EOD update
               </Button>
 
-              <Button variant="ghost" onClick={resetResolution}>
+              <Button
+                variant="ghost"
+                onClick={resetResolution}
+              >
                 Cancel
               </Button>
             </div>

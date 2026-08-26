@@ -51,7 +51,9 @@ export function TodayDprCard() {
 
   function updateEntry(id: string, field: string, value: string) {
     setEntries((current) =>
-      current.map((entry) => (entry.id === id ? { ...entry, [field]: value } : entry)),
+      current.map((entry) =>
+        entry.id === id ? { ...entry, [field]: value } : entry,
+      ),
     );
   }
 
@@ -100,7 +102,7 @@ export function TodayDprCard() {
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-primary" /> Today's DPR
+            <FileText className="h-4 w-4 text-primary" /> Today&apos;s DPR
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             One DPR per working day. All resolved To-Dos are automatically included.
@@ -108,6 +110,7 @@ export function TodayDprCard() {
         </div>
         {dpr && <StatusBadge status={dpr.status} />}
       </CardHeader>
+
       <CardContent>
         {isLoading ? (
           <div className="h-24 animate-pulse rounded-md bg-muted" />
@@ -119,7 +122,9 @@ export function TodayDprCard() {
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                 <p className="font-medium">Your manager requested changes.</p>
                 {dpr.reviewComment && <p className="mt-1">{dpr.reviewComment}</p>}
-                <p className="mt-1 text-xs">Edit the report below and re-submit it for review.</p>
+                <p className="mt-1 text-xs">
+                  Edit the report below and re-submit it for review.
+                </p>
               </div>
             )}
 
@@ -127,7 +132,9 @@ export function TodayDprCard() {
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
                 <p className="font-medium">Your DPR was rejected.</p>
                 {dpr.reviewComment && <p className="mt-1">{dpr.reviewComment}</p>}
-                <p className="mt-1 text-xs">Correct the report and submit it again.</p>
+                <p className="mt-1 text-xs">
+                  Correct the report and submit it again.
+                </p>
               </div>
             )}
 
@@ -141,40 +148,78 @@ export function TodayDprCard() {
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg bg-muted/40 p-3">
                 <p className="text-xs text-muted-foreground">DPR hours</p>
-                <p className="mt-1 text-lg font-semibold">{totalHours.toFixed(1)}h</p>
+                <p className="mt-1 text-lg font-semibold">
+                  {totalHours.toFixed(1)}h
+                </p>
               </div>
+
               <div className="rounded-lg bg-muted/40 p-3">
                 <p className="text-xs text-muted-foreground">Tasks in DPR</p>
                 <p className="mt-1 text-lg font-semibold">{entries.length}</p>
               </div>
+
               <div className="rounded-lg bg-primary/5 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground">AI completion score</p>
+                  <p className="text-xs text-muted-foreground">
+                    AI completion score
+                  </p>
                   <Sparkles className="h-4 w-4 text-primary" />
                 </div>
-                <p className="mt-1 text-lg font-semibold">{aiScore == null ? 'Pending' : `${Number(aiScore).toFixed(0)}%`}</p>
-                <p className="text-[11px] text-muted-foreground">{formatAiProvider(dpr.aiSummary?.provider)}{dpr.aiSummary?.confidence != null ? ` · ${dpr.aiSummary.confidence}% confidence` : ''}</p>
+                <p className="mt-1 text-lg font-semibold">
+                  {aiScore == null
+                    ? 'Pending'
+                    : `${Number(aiScore).toFixed(0)}%`}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {formatAiProvider(dpr.aiSummary?.provider)}
+                  {dpr.aiSummary?.confidence != null
+                    ? ` · ${dpr.aiSummary.confidence}% confidence`
+                    : ''}
+                </p>
               </div>
             </div>
 
             {!entries.length ? (
-              <EmptyState icon={FileText} title="No To-Do entries yet" description="Resolve today's To-Dos first. They will automatically appear here." />
+              <EmptyState
+                icon={FileText}
+                title="No To-Do entries yet"
+                description="Resolve today's To-Dos first. They will automatically appear here."
+              />
             ) : (
               <div className="space-y-3">
                 {entries.map((entry: any, index: number) => {
                   const task = entry.todo;
                   const taskScore = task?.aiCompletionPercent;
+
                   return (
                     <div key={entry.id} className="rounded-xl border p-4">
                       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium">{index + 1}. {entry.description}</p>
-                            {task && <Badge variant="outline">{task.eodStatus === 'COMPLETED' ? 'Completed' : 'Incomplete'}</Badge>}
+                            <p className="font-medium">
+                              {index + 1}. {entry.description}
+                            </p>
+                            {task && (
+                              <Badge variant="outline">
+                                {task.eodStatus === 'COMPLETED'
+                                  ? 'Completed'
+                                  : 'Incomplete'}
+                              </Badge>
+                            )}
                           </div>
-                          {task?.incompleteReason && <p className="mt-1 text-xs text-amber-700">Incomplete reason: {task.incompleteReason}</p>}
+
+                          {task?.incompleteReason && (
+                            <p className="mt-1 text-xs text-amber-700">
+                              Incomplete reason: {task.incompleteReason}
+                            </p>
+                          )}
                         </div>
-                        {taskScore != null && <Badge variant="outline">AI {Number(taskScore).toFixed(0)}%</Badge>}
+
+                        {taskScore != null && (
+                          <Badge variant="outline">
+                            AI {Number(taskScore).toFixed(0)}%
+                          </Badge>
+                        )}
                       </div>
 
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -187,37 +232,69 @@ export function TodayDprCard() {
                             step="0.25"
                             value={entry.hours}
                             disabled={!editable}
-                            onChange={(event) => updateEntry(entry.id, 'hours', event.target.value)}
+                            onChange={(event) =>
+                              updateEntry(
+                                entry.id,
+                                'hours',
+                                event.target.value,
+                              )
+                            }
                           />
                         </div>
+
                         <div>
                           <Label>Project</Label>
-                          <Input value={entry.project ?? ''} disabled placeholder="Project" />
+                          <Input
+                            value={entry.project ?? ''}
+                            disabled
+                            placeholder="Project"
+                          />
                         </div>
+
                         <div className="md:col-span-2">
                           <Label>What was delivered?</Label>
                           <Textarea
                             value={entry.output}
                             disabled={!editable}
-                            onChange={(event) => updateEntry(entry.id, 'output', event.target.value)}
+                            onChange={(event) =>
+                              updateEntry(
+                                entry.id,
+                                'output',
+                                event.target.value,
+                              )
+                            }
                             placeholder="Summarize the actual work completed."
                           />
                         </div>
+
                         <div>
                           <Label>Blocker / incomplete details</Label>
                           <Textarea
                             value={entry.blocker}
                             disabled={!editable}
-                            onChange={(event) => updateEntry(entry.id, 'blocker', event.target.value)}
+                            onChange={(event) =>
+                              updateEntry(
+                                entry.id,
+                                'blocker',
+                                event.target.value,
+                              )
+                            }
                             placeholder="Mention blockers if any."
                           />
                         </div>
+
                         <div>
-                          <Label>Tomorrow's plan</Label>
+                          <Label>Tomorrow&apos;s plan</Label>
                           <Textarea
                             value={entry.tomorrowPlan}
                             disabled={!editable}
-                            onChange={(event) => updateEntry(entry.id, 'tomorrowPlan', event.target.value)}
+                            onChange={(event) =>
+                              updateEntry(
+                                entry.id,
+                                'tomorrowPlan',
+                                event.target.value,
+                              )
+                            }
                             placeholder="What should continue tomorrow?"
                           />
                         </div>
@@ -233,8 +310,12 @@ export function TodayDprCard() {
                 <p className="text-xs font-medium">Latest review activity</p>
                 <div className="mt-2 space-y-1">
                   {dpr.auditTrail.slice(0, 3).map((item: any) => (
-                    <p key={item.id} className="text-xs text-muted-foreground">
-                      {item.action.replace(/_/g, ' ')} · {new Date(item.createdAt).toLocaleString('en-IN')}
+                    <p
+                      key={item.id}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {item.action.replace(/_/g, ' ')} ·{' '}
+                      {new Date(item.createdAt).toLocaleString('en-IN')}
                       {item.detail ? ` · ${item.detail}` : ''}
                     </p>
                   ))}
@@ -244,20 +325,40 @@ export function TodayDprCard() {
 
             <div className="flex flex-wrap justify-end gap-2">
               {editable && (
-                <Button variant="outline" onClick={save} disabled={saveDraft.isPending || !entries.length}>
-                  <Save className="h-4 w-4" /> {saveDraft.isPending ? 'Saving...' : 'Save draft'}
+                <Button
+                  variant="outline"
+                  onClick={save}
+                  disabled={saveDraft.isPending || !entries.length}
+                >
+                  <Save className="h-4 w-4" />{' '}
+                  {saveDraft.isPending ? 'Saving...' : 'Save draft'}
                 </Button>
               )}
+
               {editable && (
-                <Button onClick={submit} disabled={submitDpr.isPending || saveDraft.isPending || !entries.length}>
-                  <Send className="h-4 w-4" /> {submitDpr.isPending ? 'Submitting...' : dpr.status === 'NEEDS_CHANGES' || dpr.status === 'REJECTED' ? 'Re-submit DPR' : 'Submit DPR'}
+                <Button
+                  onClick={submit}
+                  disabled={
+                    submitDpr.isPending ||
+                    saveDraft.isPending ||
+                    !entries.length
+                  }
+                >
+                  <Send className="h-4 w-4" />{' '}
+                  {submitDpr.isPending
+                    ? 'Submitting...'
+                    : dpr.status === 'NEEDS_CHANGES' ||
+                        dpr.status === 'REJECTED'
+                      ? 'Re-submit DPR'
+                      : 'Submit DPR'}
                 </Button>
               )}
             </div>
 
             {!editable && dpr.status !== 'APPROVED' && (
               <p className="text-xs text-muted-foreground">
-                This DPR is currently under manager review. You can edit it again if your manager requests changes.
+                This DPR is currently under manager review. You can edit it
+                again if your manager requests changes.
               </p>
             )}
           </div>

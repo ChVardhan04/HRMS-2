@@ -13,15 +13,53 @@ async function bootstrap() {
   app.use(helmet());
 
   const corsOrigins = (
-    process.env.CORS_ORIGIN ?? "http://localhost:3000"
+    process.env.CORS_ORIGIN ??
+    [
+      "http://localhost:3000",
+      "https://hrms-2-frontend-steel.vercel.app",
+    ].join(",")
   )
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
 
   app.enableCors({
-    origin: corsOrigins,
+    origin: (origin, callback) => {
+      // Allow requests without an Origin header
+      // such as server-to-server or health-check requests.
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (corsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error(`CORS blocked for origin: ${origin}`),
+        false,
+      );
+    },
     credentials: true,
+    methods: [
+      "GET",
+      "HEAD",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "Accept",
+      "Origin",
+      "X-Requested-With",
+    ],
+    exposedHeaders: [
+      "Content-Disposition",
+    ],
   });
 
   const apiPrefix = process.env.API_PREFIX ?? "api/v1";
@@ -44,9 +82,8 @@ async function bootstrap() {
 
   await app.listen(port);
 
-  // eslint-disable-next-line no-console
   console.log(
-    `HRMS API listening on http://localhost:${port}/${apiPrefix}`,
+    `HRMS API listening on port ${port}/${apiPrefix}`,
   );
 }
 

@@ -7,18 +7,20 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const port = Number(process.env.PORT) || 3000;
+  const port = Number(process.env.PORT) || 10000;
 
-  console.log('========================================');
-  console.log('HRMS SERVER STARTUP');
-  console.log(`PORT environment variable: ${process.env.PORT}`);
-  console.log(`Resolved port: ${port}`);
-  console.log('Host: 0.0.0.0');
-  console.log('========================================');
+  console.log('========== HRMS BOOT ==========');
+  console.log('PORT:', process.env.PORT);
+  console.log('RESOLVED PORT:', port);
+  console.log('HOST: 0.0.0.0');
+
+  console.log('STEP 1: Creating Nest application...');
 
   const app = await NestFactory.create(AppModule, {
     cors: false,
   });
+
+  console.log('STEP 2: Nest application created.');
 
   app.use(helmet());
 
@@ -51,12 +53,20 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
 
+  console.log('STEP 3: Configuration complete.');
+  console.log('STEP 4: Starting HTTP server...');
+  console.log(`Attempting to listen on 0.0.0.0:${port}`);
+
   await app.listen(port, '0.0.0.0');
 
-  console.log('========================================');
-  console.log(`HRMS backend is listening on 0.0.0.0:${port}`);
+  console.log('STEP 5: HTTP SERVER STARTED.');
+  console.log(`HRMS backend listening on 0.0.0.0:${port}`);
   console.log(`API base path: /${apiPrefix}`);
-  console.log('========================================');
+  console.log('========== HRMS READY ==========');
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  console.error('========== HRMS BOOT FAILED ==========');
+  console.error(error);
+  process.exit(1);
+});

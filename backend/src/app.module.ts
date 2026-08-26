@@ -49,13 +49,17 @@ const redisConfigured = Boolean(process.env.REDIS_HOST);
 
     ...(redisConfigured
       ? [
-          BullModule.forRoot({
-            connection: {
-              host: process.env.REDIS_HOST,
-              port: Number(process.env.REDIS_PORT ?? 6379),
-              password: process.env.REDIS_PASSWORD || undefined,
-            },
-          }),
+BullModule.forRoot({
+  connection: process.env.REDIS_URL
+    ? {
+        url: process.env.REDIS_URL,
+      }
+    : {
+        host: process.env.REDIS_HOST ?? "localhost",
+        port: Number(process.env.REDIS_PORT ?? 6379),
+        password: process.env.REDIS_PASSWORD || undefined,
+      },
+}),
         ]
       : []),
 

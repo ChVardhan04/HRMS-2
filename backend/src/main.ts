@@ -1,33 +1,21 @@
-import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import helmet from 'helmet';
-
-import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import "reflect-metadata";
+import { NestFactory } from "@nestjs/core";
+import { ValidationPipe } from "@nestjs/common";
+import helmet from "helmet";
+import { AppModule } from "./app.module";
+import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 
 async function bootstrap() {
-  const port = Number(process.env.PORT) || 10000;
-
-  console.log('========== HRMS BOOT ==========');
-  console.log('PORT:', process.env.PORT);
-  console.log('RESOLVED PORT:', port);
-  console.log('HOST: 0.0.0.0');
-
-  console.log('STEP 1: Creating Nest application...');
-
   const app = await NestFactory.create(AppModule, {
     cors: false,
   });
 
-  console.log('STEP 2: Nest application created.');
-
   app.use(helmet());
 
   const corsOrigins = (
-    process.env.CORS_ORIGIN ?? 'http://localhost:3000'
+    process.env.CORS_ORIGIN ?? "http://localhost:3000"
   )
-    .split(',')
+    .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
 
@@ -36,8 +24,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const apiPrefix = process.env.API_PREFIX ?? 'api/v1';
-
+  const apiPrefix = process.env.API_PREFIX ?? "api/v1";
   app.setGlobalPrefix(apiPrefix);
 
   app.useGlobalPipes(
@@ -53,20 +40,14 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  console.log('STEP 3: Configuration complete.');
-  console.log('STEP 4: Starting HTTP server...');
-  console.log(`Attempting to listen on 0.0.0.0:${port}`);
+  const port = process.env.PORT ?? 4000;
 
-  await app.listen(port, '0.0.0.0');
+  await app.listen(port);
 
-  console.log('STEP 5: HTTP SERVER STARTED.');
-  console.log(`HRMS backend listening on 0.0.0.0:${port}`);
-  console.log(`API base path: /${apiPrefix}`);
-  console.log('========== HRMS READY ==========');
+  // eslint-disable-next-line no-console
+  console.log(
+    `HRMS API listening on http://localhost:${port}/${apiPrefix}`,
+  );
 }
 
-bootstrap().catch((error) => {
-  console.error('========== HRMS BOOT FAILED ==========');
-  console.error(error);
-  process.exit(1);
-});
+bootstrap();

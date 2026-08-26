@@ -42,12 +42,21 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const port = Number(process.env.PORT) || 3000;
+const port = Number(process.env.PORT) || 3000;
 
-  console.log(`Attempting to start HRMS backend on port ${port}`);
-  console.log(`Render PORT value: ${process.env.PORT}`);
+console.log('========================================');
+console.log('HRMS SERVER STARTUP');
+console.log(`PORT environment variable: ${process.env.PORT}`);
+console.log(`Resolved port: ${port}`);
+console.log('Host: 0.0.0.0');
+console.log('========================================');
 
-  await app.listen(port, '0.0.0.0');
+await app.listen(port, '0.0.0.0');
+
+console.log('========================================');
+console.log(`HRMS backend is listening on 0.0.0.0:${port}`);
+console.log(`API base path: /${apiPrefix}`);
+console.log('========================================');
 
   console.log(`HRMS backend running on port ${port}`);
 }

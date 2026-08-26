@@ -94,7 +94,9 @@ export default function DprPage() {
                 <CardTitle className="flex items-center gap-2">
                   <ClipboardCheck className="h-4 w-4 text-primary" /> Team DPR status
                 </CardTitle>
-                <p className="text-xs text-muted-foreground">See every direct report's current DPR state and AI task-completion score.</p>
+                <p className="text-xs text-muted-foreground">
+                  See every direct report&apos;s current DPR state and AI task-completion score.
+                </p>
               </CardHeader>
               <CardContent>
                 {!teamStatus?.length ? (
@@ -175,7 +177,9 @@ export default function DprPage() {
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Review DPR</DialogTitle>
-            <DialogDescription>Review the employee's submitted tasks, DPR evidence and AI analysis before deciding.</DialogDescription>
+            <DialogDescription>
+              Review the employee&apos;s submitted tasks, DPR evidence and AI analysis before deciding.
+            </DialogDescription>
           </DialogHeader>
 
           {selected && (

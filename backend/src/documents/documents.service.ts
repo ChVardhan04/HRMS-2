@@ -100,4 +100,47 @@ export class DocumentsService {
       fileName: document.fileName,
     };
   }
+
+
+  async delete(
+  employeeId: string,
+  documentId: string,
+  user: { employeeId?: string; roles: string[] },
+) {
+  const hr =
+    user.roles.includes(RoleName.HR_ADMIN) ||
+    user.roles.includes(RoleName.SUPER_ADMIN);
+
+  if (!hr) {
+    throw new ForbiddenException(
+      "Only HR can delete employee documents",
+    );
+  }
+
+  const document = await this.prisma.document.findFirst({
+    where: {
+      id: documentId,
+      employeeId,
+    },
+  });
+
+  if (!document) {
+    throw new NotFoundException("Document not found");
+  }
+
+  // Delete the actual file from the configured storage.
+  await this.storage.delete(document.storageKey);
+
+  // Delete the database record.
+  await this.prisma.document.delete({
+    where: {
+      id: document.id,
+    },
+  });
+
+  return {
+    success: true,
+    message: "Document deleted successfully",
+  };
+}
 }

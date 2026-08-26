@@ -7,6 +7,15 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
+  const port = Number(process.env.PORT) || 3000;
+
+  console.log('========================================');
+  console.log('HRMS SERVER STARTUP');
+  console.log(`PORT environment variable: ${process.env.PORT}`);
+  console.log(`Resolved port: ${port}`);
+  console.log('Host: 0.0.0.0');
+  console.log('========================================');
+
   const app = await NestFactory.create(AppModule, {
     cors: false,
   });
@@ -42,23 +51,12 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
 
-const port = Number(process.env.PORT) || 3000;
+  await app.listen(port, '0.0.0.0');
 
-console.log('========================================');
-console.log('HRMS SERVER STARTUP');
-console.log(`PORT environment variable: ${process.env.PORT}`);
-console.log(`Resolved port: ${port}`);
-console.log('Host: 0.0.0.0');
-console.log('========================================');
-
-await app.listen(port, '0.0.0.0');
-
-console.log('========================================');
-console.log(`HRMS backend is listening on 0.0.0.0:${port}`);
-console.log(`API base path: /${apiPrefix}`);
-console.log('========================================');
-
-  console.log(`HRMS backend running on port ${port}`);
+  console.log('========================================');
+  console.log(`HRMS backend is listening on 0.0.0.0:${port}`);
+  console.log(`API base path: /${apiPrefix}`);
+  console.log('========================================');
 }
 
 bootstrap();

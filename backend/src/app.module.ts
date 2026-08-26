@@ -30,23 +30,35 @@ import { RolesGuard } from "./common/guards/roles.guard";
 import { JwtAuthGuard } from "./auth/guards/jwt-auth.guard";
 import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
 
+const redisConfigured = Boolean(process.env.REDIS_HOST);
+
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+
     ThrottlerModule.forRoot([
       {
         ttl: Number(process.env.RATE_LIMIT_TTL ?? 60) * 1000,
         limit: Number(process.env.RATE_LIMIT_MAX ?? 100),
       },
     ]),
+
     ScheduleModule.forRoot(),
-    BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST ?? "localhost",
-        port: Number(process.env.REDIS_PORT ?? 6379),
-        password: process.env.REDIS_PASSWORD || undefined,
-      },
-    }),
+
+    ...(redisConfigured
+      ? [
+          BullModule.forRoot({
+            connection: {
+              host: process.env.REDIS_HOST,
+              port: Number(process.env.REDIS_PORT ?? 6379),
+              password: process.env.REDIS_PASSWORD || undefined,
+            },
+          }),
+        ]
+      : []),
+
     PrismaModule,
     AuditModule,
     AuthModule,
@@ -69,11 +81,24 @@ import { AuditInterceptor } from "./common/interceptors/audit.interceptor";
     PoliciesModule,
     DocumentsModule,
   ],
+
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
-    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
+    },
   ],
 })
 export class AppModule {}

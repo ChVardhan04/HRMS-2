@@ -19,7 +19,7 @@ import { initials } from '@/lib/utils';
 import { useAuthStore } from '@/lib/auth-store';
 
 const emptyForm = {
-  email: '', firstName: '', lastName: '', phone: '', dateOfJoining: new Date().toISOString().slice(0, 10),
+  email: '', personalEmail: '', firstName: '', lastName: '', phone: '', dateOfBirth: '', gender: '', emergencyContact: '', emergencyAddress: '', dateOfJoining: new Date().toISOString().slice(0, 10),
   employmentType: 'FULL_TIME', departmentId: '', designationId: '', managerId: '', skipLevelManagerId: '', location: '', monthlySalary: '', salaryCurrency: 'INR', payrollEligible: true, roleNames: ['EMPLOYEE'],
 };
 
@@ -63,11 +63,16 @@ export default function EmployeesPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>Add employee</DialogTitle><DialogDescription>Create the employee master record and assign the reporting structure. The employee will receive an activation link and create their own password.</DialogDescription></DialogHeader>
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); createEmployee.mutate({ ...form, skipLevelManagerId: form.skipLevelManagerId || undefined, monthlySalary: form.monthlySalary ? Number(form.monthlySalary) : undefined, managerId: form.managerId || undefined, departmentId: form.departmentId || undefined, designationId: form.designationId || undefined, phone: form.phone || undefined, location: form.location || undefined }, { onSuccess: () => setOpen(false) }); }}>
+          <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); createEmployee.mutate({ ...form, skipLevelManagerId: form.skipLevelManagerId || undefined, monthlySalary: form.monthlySalary ? Number(form.monthlySalary) : undefined, managerId: form.managerId || undefined, departmentId: form.departmentId || undefined, designationId: form.designationId || undefined, personalEmail: form.personalEmail || undefined, phone: form.phone || undefined, dateOfBirth: form.dateOfBirth || undefined, gender: form.gender || undefined, emergencyContact: form.emergencyContact || undefined, emergencyAddress: form.emergencyAddress || undefined, location: form.location || undefined }, { onSuccess: () => setOpen(false) }); }}>
             <div><Label>First name</Label><Input required value={form.firstName} onChange={(e) => update('firstName', e.target.value)} /></div>
             <div><Label>Last name</Label><Input required value={form.lastName} onChange={(e) => update('lastName', e.target.value)} /></div>
             <div><Label>Work email</Label><Input required type="email" value={form.email} onChange={(e) => update('email', e.target.value)} /></div>
+            <div><Label>Personal email</Label><Input type="email" value={form.personalEmail} onChange={(e) => update('personalEmail', e.target.value)} /></div>
             <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => update('phone', e.target.value)} /></div>
+            <div><Label>Date of birth</Label><Input type="date" value={form.dateOfBirth} onChange={(e) => update('dateOfBirth', e.target.value)} /></div>
+            <div><Label>Gender</Label><Input value={form.gender} onChange={(e) => update('gender', e.target.value)} placeholder="Optional" /></div>
+            <div><Label>Emergency contact</Label><Input value={form.emergencyContact} onChange={(e) => update('emergencyContact', e.target.value)} /></div>
+            <div className="sm:col-span-2"><Label>Emergency address</Label><Input value={form.emergencyAddress} onChange={(e) => update('emergencyAddress', e.target.value)} /></div>
             <div><Label>Date of joining</Label><Input required type="date" value={form.dateOfJoining} onChange={(e) => update('dateOfJoining', e.target.value)} /></div>
             <div><Label>Employment type</Label><Select value={form.employmentType} onValueChange={(v) => update('employmentType', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[['FULL_TIME','Full time'],['PART_TIME','Part time'],['CONTRACT','Contract'],['INTERN','Intern']].map(([v,l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select></div>
             <div><Label>Department</Label><Select value={form.departmentId} onValueChange={(v) => update('departmentId', v)}><SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger><SelectContent>{departments?.map((d: any) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></div>

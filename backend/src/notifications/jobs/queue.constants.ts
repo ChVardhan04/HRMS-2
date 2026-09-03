@@ -6,6 +6,7 @@ export enum JobName {
   DPR_ESCALATION_SWEEP = "dpr-escalation-sweep",
   STALE_CANDIDATE_SWEEP = "stale-candidate-sweep",
   GROUP_CHECK_REMINDER_SWEEP = "group-check-reminder-sweep",
+  KRA_DAILY_CALC = "kra-daily-calculation",
   KRA_PRECALC = "kra-precalculation",
   KRA_FINALIZE = "kra-finalization",
   LEAVE_ACCRUAL = "leave-accrual",

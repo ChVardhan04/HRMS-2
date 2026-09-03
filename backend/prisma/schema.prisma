@@ -105,6 +105,22 @@ enum LeaveStatus {
   CANCELLED
 }
 
+enum LeaveDurationType {
+  FULL_DAY
+  FIRST_HALF
+  SECOND_HALF
+}
+
+enum KraMeasurementType {
+  NUMBER
+  PERCENTAGE
+  BOOLEAN
+  RATING
+  REVENUE
+  MANUAL
+  AUTOMATED
+}
+
 enum JobStatus {
   DRAFT
   PENDING_APPROVAL
@@ -305,7 +321,7 @@ model Organization {
   lateGraceMinutes Int @default(0)
   attendanceCallStartMinutes Int @default(555)
   attendanceCallEndMinutes Int @default(570)
-  attendanceAbsenceCutoffMinutes Int @default(720)
+  attendanceAbsenceCutoffMinutes Int @default(780)
   dprSlaMinutes Int @default(1320)
   dprReminder1Minutes Int @default(1080)
   dprReminder2Minutes Int @default(1200)
@@ -330,6 +346,9 @@ model Department {
   organization   Organization @relation(fields: [organizationId], references: [id])
   employees      Employee[]
   designations   Designation[]
+  policy         DepartmentPolicy?
+  leavePolicies  DepartmentLeavePolicy[]
+  kraTemplates   KRATemplate[]
   deletedAt      DateTime?
 
   createdAt DateTime @default(now())
@@ -338,12 +357,51 @@ model Department {
   @@unique([organizationId, name])
 }
 
+model DepartmentPolicy {
+  id             String     @id @default(uuid())
+  departmentId   String     @unique
+  department     Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  mondayWorking    Boolean @default(true)
+  tuesdayWorking   Boolean @default(true)
+  wednesdayWorking Boolean @default(true)
+  thursdayWorking  Boolean @default(true)
+  fridayWorking    Boolean @default(true)
+  saturdayWorking  Boolean @default(false)
+  saturdayWorkPattern SaturdayWorkPattern @default(FIRST_THIRD_WORKING)
+  sundayWorking    Boolean @default(false)
+
+  officeStartMinutes Int @default(570)
+  officeEndMinutes   Int @default(1110)
+  lunchStartMinutes  Int @default(810)
+  lunchEndMinutes    Int @default(840)
+  checkInOpenMinutes Int @default(570)
+  lateAfterMinutes   Int @default(630)
+  halfDayAfterMinutes Int @default(645)
+  checkInCutoffMinutes Int @default(780)
+  autoAbsentMinutes   Int @default(780)
+
+  allowedLatesPerMonth Int @default(2)
+  firstLatePenaltyDays Decimal @default(0) @db.Decimal(4, 2)
+  secondLatePenaltyDays Decimal @default(0) @db.Decimal(4, 2)
+  thirdPlusLatePenaltyDays Decimal @default(1.00) @db.Decimal(4, 2)
+
+  sandwichLeaveEnabled Boolean @default(true)
+  sandwichIncludesPreviousWorkingDay Boolean @default(true)
+  probationMonthlyLeaveLimit Decimal @default(1) @db.Decimal(4, 1)
+  probationMaxDaysPerRequest Decimal @default(1) @db.Decimal(4, 1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Designation {
   id           String     @id @default(uuid())
   title        String
   departmentId String
   department   Department @relation(fields: [departmentId], references: [id])
   employees    Employee[]
+  kraTemplates KRATemplate[]
   deletedAt    DateTime?
 
   @@unique([departmentId, title])
@@ -356,6 +414,7 @@ model Holiday {
   name           String
   date           DateTime
   isOptional     Boolean      @default(false)
+  audienceNote   String?
 
   @@unique([organizationId, date, name])
 }
@@ -373,6 +432,9 @@ model Employee {
   lastName         String
   personalEmail    String?
   phone            String?
+  gender           String?
+  emergencyContact String?
+  emergencyAddress String?
   dateOfBirth      DateTime?
   dateOfJoining    DateTime
   employmentType   EmploymentType    @default(FULL_TIME)
@@ -396,6 +458,7 @@ model Employee {
 
   documents        Document[]
   policyAcknowledgements PolicyAcknowledgement[]
+  dailyKraScores   KRADailyScore[]
   leaveBalances     LeaveBalance[]
   leaveRequests     LeaveRequest[]   @relation("LeaveRequester")
   approvedLeaves    LeaveRequest[]   @relation("LeaveApprover")
@@ -452,6 +515,9 @@ model WorkDay {
   workingHours       Decimal?  @db.Decimal(5, 2)
   isLate            Boolean   @default(false)
   isEarlyDeparture  Boolean   @default(false)
+  lateCountInMonth  Int?
+  latePenaltyDays   Decimal   @default(0) @db.Decimal(4, 2)
+  absenceNotifiedAt DateTime?
 
   totalLoggedHours  Decimal   @default(0) @db.Decimal(5, 2)
   dprStatus         DprStatus @default(DRAFT)
@@ -623,8 +689,31 @@ model LeaveType {
 
   balances LeaveBalance[]
   requests LeaveRequest[]
+  departmentPolicies DepartmentLeavePolicy[]
 
   @@index([organizationId])
+}
+
+model DepartmentLeavePolicy {
+  id             String     @id @default(uuid())
+  departmentId   String
+  department     Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  leaveTypeId    String
+  leaveType      LeaveType  @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  annualEntitlement Decimal @default(0) @db.Decimal(5, 2)
+  monthlyEntitlement Decimal? @db.Decimal(5, 2)
+  requiresBalance Boolean @default(true)
+  advanceNoticeWorkingDays Int @default(0)
+  allowPostApproval Boolean @default(false)
+  medicalCertificateAfterDays Decimal? @db.Decimal(4, 1)
+  sandwichApplies Boolean @default(true)
+  maxConsecutiveDays Decimal? @db.Decimal(4, 1)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([departmentId, leaveTypeId])
+  @@index([leaveTypeId])
 }
 
 model LeaveBalance {
@@ -650,8 +739,17 @@ model LeaveRequest {
   leaveType    LeaveType   @relation(fields: [leaveTypeId], references: [id])
   startDate    DateTime    @db.Date
   endDate      DateTime    @db.Date
-  numberOfDays Decimal     @db.Decimal(4, 1)
+  numberOfDays Decimal     @db.Decimal(5, 1)
+  appliedWorkingDays Decimal @default(0) @db.Decimal(5, 1)
+  sandwichDays Decimal @default(0) @db.Decimal(5, 1)
+  durationType LeaveDurationType @default(FULL_DAY)
   reason       String?
+  emergencyContact String?
+  emergencyAddress String?
+  medicalCertificateFileName String?
+  medicalCertificateStorageKey String?
+  medicalCertificateMimeType String?
+  policySnapshot Json?
   status       LeaveStatus @default(PENDING)
   managerId    String?
   manager      Employee?   @relation("LeaveApprover", fields: [managerId], references: [id])
@@ -945,22 +1043,57 @@ model KRATemplate {
   id             String       @id @default(uuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
-  roleName       String       // e.g. "Developer", "Tech Lead", "HR", "All Employees"
+  departmentId   String?
+  department     Department?  @relation(fields: [departmentId], references: [id])
+  designationId  String?
+  designation    Designation? @relation(fields: [designationId], references: [id])
+  roleName       String
+  name           String?
+  description    String?
   isDefault      Boolean      @default(false)
+  isActive       Boolean      @default(true)
   items          KRAItem[]
   scores         KRAScore[]
+  dailyScores    KRADailyScore[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([departmentId])
+  @@index([designationId])
 }
 
 model KRAItem {
   id           String      @id @default(uuid())
   templateId   String
-  template     KRATemplate @relation(fields: [templateId], references: [id])
-  name         String      // DPR_SUBMISSION, TASK_COMPLETION, ATTENDANCE, DPR_QUALITY, COLLABORATION
+  template     KRATemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
   weightPercent Decimal    @db.Decimal(5, 2)
-  isAutomated  Boolean     @default(true)
+  measurementType KraMeasurementType @default(PERCENTAGE)
+  targetValue  Decimal?    @db.Decimal(14, 2)
+  targetText   String?
+  unit         String?
+  isAutomated  Boolean     @default(false)
+  sortOrder    Int         @default(0)
+}
+
+model KRADailyScore {
+  id            String       @id @default(uuid())
+  employeeId    String
+  employee      Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  templateId    String
+  template      KRATemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  date          DateTime     @db.Date
+  breakdown     Json
+  evidence      Json?
+  finalScore    Decimal      @db.Decimal(5, 2)
+  provider      String?
+  model         String?
+  calculatedAt  DateTime     @default(now())
+
+  @@unique([employeeId, date])
+  @@index([templateId, date])
 }
 
 model KRAScore {
@@ -971,7 +1104,7 @@ model KRAScore {
   template     KRATemplate @relation(fields: [templateId], references: [id])
   periodMonth  Int
   periodYear   Int
-  breakdown    Json        // { itemName: { weight, achievementPercent, contribution } }
+  breakdown    Json
   finalScore   Decimal     @db.Decimal(5, 2)
   isFinal      Boolean     @default(false)
   calculatedAt DateTime    @default(now())

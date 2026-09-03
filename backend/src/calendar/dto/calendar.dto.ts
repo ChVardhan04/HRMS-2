@@ -20,6 +20,10 @@ export class HolidayDto {
   @IsOptional()
   @IsBoolean()
   isOptional?: boolean;
+
+  @IsOptional()
+  @IsString()
+  audienceNote?: string;
 }
 
 export class CalendarSettingsDto {

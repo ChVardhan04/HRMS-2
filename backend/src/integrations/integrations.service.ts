@@ -13,10 +13,8 @@ export class IntegrationsService {
         configured: Boolean(process.env.GOOGLE_CALENDAR_CLIENT_ID),
       },
       email: {
-        provider: process.env.EMAIL_PROVIDER ?? "smtp",
-        configured: Boolean(
-          process.env.SMTP_HOST || process.env.SENDGRID_API_KEY,
-        ),
+        provider: "SMTP",
+        configured: Boolean(process.env.SMTP_HOST),
       },
       storage: {
         provider: process.env.STORAGE_PROVIDER ?? "s3",

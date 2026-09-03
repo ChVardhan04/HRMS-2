@@ -32,12 +32,13 @@ export function KraSummaryCard() {
             </div>
             <Progress value={Number(latest.finalScore)} />
             <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              {Object.entries(latest.breakdown ?? {}).map(([key, val]: any) => (
-                <div key={key} className="flex justify-between rounded-md bg-muted/50 px-2 py-1">
-                  <span>{key.replace(/_/g, ' ')}</span>
+              {Object.entries(latest.breakdown ?? {}).map(([key, val]: any) => {
+                const metric = latest.template?.items?.find((i:any) => i.id === key);
+                return <div key={key} className="flex justify-between rounded-md bg-muted/50 px-2 py-1">
+                  <span>{metric?.name ?? key.replace(/_/g, ' ')}</span>
                   <span className="font-medium text-foreground">{val.achievementPercent}%</span>
-                </div>
-              ))}
+                </div>;
+              })}
             </div>
           </div>
         )}

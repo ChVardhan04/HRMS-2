@@ -38,6 +38,12 @@ export class EmployeesService {
       );
     }
 
+    if (dto.designationId) {
+      const designation = await this.prisma.designation.findFirst({ where: { id: dto.designationId, deletedAt: null } });
+      if (!designation) throw new BadRequestException("Selected designation does not exist");
+      if (dto.departmentId && designation.departmentId !== dto.departmentId) throw new BadRequestException("Selected designation does not belong to the selected department");
+    }
+
     const requestedRoles = dto.roleNames?.length
       ? [...new Set(dto.roleNames)]
       : [RoleName.EMPLOYEE];
@@ -91,7 +97,12 @@ export class EmployeesService {
           userId: user.id,
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
+          personalEmail: dto.personalEmail?.trim().toLowerCase(),
           phone: dto.phone,
+          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+          gender: dto.gender,
+          emergencyContact: dto.emergencyContact,
+          emergencyAddress: dto.emergencyAddress,
           dateOfJoining: new Date(dto.dateOfJoining),
           employmentType: dto.employmentType,
           departmentId: dto.departmentId,
@@ -356,6 +367,15 @@ export class EmployeesService {
     user?: { employeeId?: string; roles: string[] },
   ) {
     const employee = await this.findOne(id, user);
+    const targetDepartmentId = dto.departmentId ?? employee.departmentId;
+    if (dto.designationId || dto.departmentId) {
+      const designationId = dto.designationId ?? employee.designationId;
+      if (designationId) {
+        const designation = await this.prisma.designation.findFirst({ where: { id: designationId, deletedAt: null } });
+        if (!designation) throw new BadRequestException("Selected designation does not exist");
+        if (targetDepartmentId && designation.departmentId !== targetDepartmentId) throw new BadRequestException("Selected designation does not belong to the selected department");
+      }
+    }
     const isHr =
       user?.roles.includes(RoleName.HR_ADMIN) ||
       user?.roles.includes(RoleName.SUPER_ADMIN);
@@ -368,7 +388,12 @@ export class EmployeesService {
       data: {
         firstName: dto.firstName,
         lastName: dto.lastName,
+        personalEmail: dto.personalEmail,
         phone: dto.phone,
+        dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+        gender: dto.gender,
+        emergencyContact: dto.emergencyContact,
+        emergencyAddress: dto.emergencyAddress,
         dateOfJoining: dto.dateOfJoining
           ? new Date(dto.dateOfJoining)
           : undefined,

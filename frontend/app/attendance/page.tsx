@@ -24,7 +24,7 @@ import { useAuthStore } from '@/lib/auth-store';
 import { useTeamToday } from '@/features/workday/use-workday';
 import { api } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/utils';
-import { Users, Clock3 } from 'lucide-react';
+import { Users, Clock3, CalendarDays, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -156,6 +156,20 @@ export default function AttendancePage() {
     enabled: true,
   });
 
+  const now = new Date();
+  const [reportMonth, setReportMonth] = useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`);
+  const reportYear = Number(reportMonth.slice(0,4));
+  const reportMonthNo = Number(reportMonth.slice(5,7));
+  const { data: monthly } = useQuery({
+    queryKey: ['attendance','monthly','me',reportMonth],
+    queryFn: () => api.get<any>(`/attendance/monthly/me?month=${reportMonthNo}&year=${reportYear}`),
+  });
+  const { data: monthlyTeam } = useQuery({
+    queryKey: ['attendance','monthly','team',reportMonth],
+    queryFn: () => api.get<any>(`/attendance/monthly/team?month=${reportMonthNo}&year=${reportYear}`),
+    enabled: isManagerOrAbove && hasRole('HR_ADMIN','SUPER_ADMIN'),
+  });
+
   return (
     <AppShell title="Attendance">
       <div className="flex flex-col gap-4">
@@ -166,6 +180,39 @@ export default function AttendancePage() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <CheckInWidget />
         </div>
+
+        {/* =====================================================
+            MONTHLY ATTENDANCE SUMMARY
+        ====================================================== */}
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /> Monthly attendance</CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">Working days follow your department calendar. A third monthly late creates one full-day attendance deduction.</p>
+              </div>
+              <Input type="month" value={reportMonth} onChange={(e)=>setReportMonth(e.target.value)} className="w-44" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+              <Stat label="Worked" value={monthly ? `${monthly.workedDays}` : '-'} />
+              <Stat label="Total working" value={monthly?.totalWorkingDays ?? '-'} />
+              <Stat label="Effective days" value={monthly?.effectiveWorkingDays ?? '-'} />
+              <Stat label="Present" value={monthly?.presentDays ?? '-'} />
+              <Stat label="Half days" value={monthly?.halfDays ?? '-'} />
+              <Stat label="Late count" value={monthly?.lateCount ?? '-'} />
+              <Stat label="Late deduction" value={monthly ? `${monthly.latePenaltyDays} day` : '-'} />
+            </div>
+          </CardContent>
+        </Card>
+
+        {hasRole('HR_ADMIN','SUPER_ADMIN') && (
+          <Card>
+            <CardHeader><CardTitle>Monthly attendance by employee</CardTitle></CardHeader>
+            <CardContent>{!monthlyTeam?.rows?.length ? <p className="text-sm text-muted-foreground">No employee attendance data for this month.</p> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Department</TableHead><TableHead>Worked</TableHead><TableHead>Total working</TableHead><TableHead>Late</TableHead><TableHead>Deduction</TableHead><TableHead>Rate</TableHead></TableRow></TableHeader><TableBody>{monthlyTeam.rows.map((r:any)=><TableRow key={r.employee.id}><TableCell><p className="font-medium">{r.employee.firstName} {r.employee.lastName}</p><p className="text-xs text-muted-foreground">{r.employee.employeeCode}</p></TableCell><TableCell>{r.employee.department?.name ?? '-'}</TableCell><TableCell>{r.workedDays}</TableCell><TableCell>{r.totalWorkingDays}</TableCell><TableCell>{r.lateCount}</TableCell><TableCell>{r.latePenaltyDays ? <span className="inline-flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5"/>{r.latePenaltyDays} day</span> : '0'}</TableCell><TableCell>{r.attendanceRate}%</TableCell></TableRow>)}</TableBody></Table></div>}</CardContent>
+          </Card>
+        )}
 
         {/* =====================================================
             MY ATTENDANCE HISTORY
@@ -226,18 +273,22 @@ export default function AttendancePage() {
                       </TableCell>
 
                       <TableCell>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setRegularise(wd);
-                            setReason('');
-                            setRequestedCheckIn('');
-                            setRequestedCheckOut('');
-                          }}
-                        >
-                          Fix
-                        </Button>
+                        {(wd.attendanceStatus === 'LATE' ||
+                          wd.attendanceStatus === 'HALF_DAY' ||
+                          (wd.checkInAt && !wd.checkOutAt)) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setRegularise(wd);
+                              setReason('');
+                              setRequestedCheckIn('');
+                              setRequestedCheckOut('');
+                            }}
+                          >
+                            Fix
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -593,4 +644,8 @@ export default function AttendancePage() {
       </Dialog>
     </AppShell>
   );
+}
+
+function Stat({label,value}:{label:string;value:any}) {
+  return <div className="rounded-lg border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-semibold">{value}</p></div>;
 }

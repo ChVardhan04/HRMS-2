@@ -39,6 +39,29 @@ export function useCheckIn() {
   });
 }
 
+export function useUndoCheckIn() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: () => api.post('/attendance/check-in/undo'),
+    onSuccess: () => {
+      toast({
+        title: 'Check-in undone',
+        description: 'Today\'s attendance is reset. You can check in again when ready.',
+        variant: 'success',
+      });
+      qc.invalidateQueries({ queryKey: ['work-day'] });
+      qc.invalidateQueries({ queryKey: ['todos'] });
+    },
+    onError: (err: any) =>
+      toast({
+        title: 'Could not undo check-in',
+        description: err.message,
+        variant: 'destructive',
+      }),
+  });
+}
+
 export function useCheckOut() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -51,3 +74,26 @@ export function useCheckOut() {
     onError: (err: any) => toast({ title: 'Check-out failed', description: err.message, variant: 'destructive' }),
   });
 }
+
+export function useUndoCheckOut() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: () => api.post('/attendance/check-out/undo'),
+    onSuccess: () => {
+      toast({
+        title: 'Checkout undone',
+        description: 'You can correct your attendance and check out again today.',
+        variant: 'success',
+      });
+      qc.invalidateQueries({ queryKey: ['work-day'] });
+    },
+    onError: (err: any) =>
+      toast({
+        title: 'Could not undo checkout',
+        description: err.message,
+        variant: 'destructive',
+      }),
+  });
+}
+

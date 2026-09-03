@@ -35,13 +35,34 @@ export class AttendanceController {
     return this.attendanceService.checkIn(user.employeeId!, dto, req.ip);
   }
 
+  @Post("check-in/undo")
+  undoCheckIn(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    return this.attendanceService.undoCheckIn(user.employeeId!, req.ip);
+  }
+
   @Post("check-out")
   checkOut(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CheckOutDto,
     @Req() req: Request,
   ) {
-    return this.attendanceService.checkOut(user.employeeId!, dto, req.ip);
+    return this.attendanceService.checkOut(
+      user.employeeId!,
+      dto,
+      req.ip,
+      user.roles,
+    );
+  }
+
+  @Post("check-out/undo")
+  undoCheckOut(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ) {
+    return this.attendanceService.undoCheckOut(user.employeeId!, req.ip);
   }
 
   @Post("regularise")
@@ -82,6 +103,28 @@ export class AttendanceController {
     return this.attendanceService.teamAttendanceToday(
       user.employeeId!,
       user.roles,
+    );
+  }
+
+  @Get("monthly/me")
+  monthlyMe(@CurrentUser() user: AuthenticatedUser, @Query("month") month: string, @Query("year") year: string) {
+    const now = new Date();
+    return this.attendanceService.monthlyReport(
+      user.employeeId!,
+      Number(month) || now.getMonth() + 1,
+      Number(year) || now.getFullYear(),
+      user,
+    );
+  }
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Get("monthly/team")
+  monthlyTeam(@CurrentUser() user: AuthenticatedUser, @Query("month") month: string, @Query("year") year: string) {
+    const now = new Date();
+    return this.attendanceService.monthlyTeamReport(
+      Number(month) || now.getMonth() + 1,
+      Number(year) || now.getFullYear(),
+      user,
     );
   }
 

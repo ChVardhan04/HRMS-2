@@ -1,61 +1,46 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
-/** Implements "Leave accrual — 1st of month — update balances" from plan section 12.2. */
+/** Keeps department-controlled annual/monthly leave entitlements synchronized without double-accrual. */
 @Injectable()
 export class LeaveSchedulerService {
   private readonly logger = new Logger(LeaveSchedulerService.name);
-
   constructor(private prisma: PrismaService) {}
 
   async runMonthlyAccrual() {
-    const year = new Date().getFullYear();
-    const leaveTypes = await this.prisma.leaveType.findMany({
-      where: { accrualPerMonth: { gt: 0 } },
-    });
+    const now = new Date();
+    const year = now.getFullYear();
+    const monthStart = new Date(year, now.getMonth(), 1);
     const employees = await this.prisma.employee.findMany({
-      where: { employmentStatus: { not: "EXITED" } },
+      where: { employmentStatus: { not: "EXITED" }, deletedAt: null },
+      select: { id: true, departmentId: true },
     });
-
     let updates = 0;
-    const monthStart = new Date(year, new Date().getMonth(), 1);
     for (const employee of employees) {
-      for (const leaveType of leaveTypes) {
+      if (!employee.departmentId) continue;
+      const policies = await this.prisma.departmentLeavePolicy.findMany({
+        where: { departmentId: employee.departmentId, active: true, requiresBalance: true },
+        include: { leaveType: true },
+      });
+      for (const policy of policies) {
         const existing = await this.prisma.leaveBalance.findUnique({
-          where: {
-            employeeId_leaveTypeId_year: {
-              employeeId: employee.id,
-              leaveTypeId: leaveType.id,
-              year,
-            },
-          },
+          where: { employeeId_leaveTypeId_year: { employeeId: employee.id, leaveTypeId: policy.leaveTypeId, year } },
         });
-        if (existing?.lastAccruedAt && existing.lastAccruedAt >= monthStart)
+        if (!existing) {
+          await this.prisma.leaveBalance.create({
+            data: { employeeId: employee.id, leaveTypeId: policy.leaveTypeId, year, accrued: Number(policy.annualEntitlement), lastAccruedAt: now },
+          });
+          updates++;
           continue;
-        await this.prisma.leaveBalance.upsert({
-          where: {
-            employeeId_leaveTypeId_year: {
-              employeeId: employee.id,
-              leaveTypeId: leaveType.id,
-              year,
-            },
-          },
-          create: {
-            employeeId: employee.id,
-            leaveTypeId: leaveType.id,
-            year,
-            accrued: leaveType.accrualPerMonth,
-            lastAccruedAt: new Date(),
-          },
-          update: {
-            accrued: { increment: leaveType.accrualPerMonth },
-            lastAccruedAt: new Date(),
-          },
-        });
-        updates += 1;
+        }
+        if (policy.monthlyEntitlement != null && (!existing.lastAccruedAt || existing.lastAccruedAt < monthStart)) {
+          const next = Math.min(Number(policy.annualEntitlement), Number(existing.accrued) + Number(policy.monthlyEntitlement));
+          await this.prisma.leaveBalance.update({ where: { id: existing.id }, data: { accrued: next, lastAccruedAt: now } });
+          updates++;
+        }
       }
     }
-    this.logger.log(`Leave accrual applied ${updates} balance update(s).`);
+    this.logger.log(`Leave entitlement synchronization applied ${updates} update(s).`);
     return { updates };
   }
 }

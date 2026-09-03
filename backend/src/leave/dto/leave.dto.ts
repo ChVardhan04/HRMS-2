@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -8,6 +9,7 @@ import {
   Max,
   Min,
 } from "class-validator";
+import { LeaveDurationType } from "@prisma/client";
 
 export class ApplyLeaveDto {
   @IsUUID()
@@ -20,13 +22,40 @@ export class ApplyLeaveDto {
   endDate: string;
 
   @IsOptional()
+  @IsEnum(LeaveDurationType)
+  durationType?: LeaveDurationType;
+
+  @IsOptional()
   @IsString()
   reason?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyContact?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyAddress?: string;
 }
+
+export class LeavePreviewDto extends ApplyLeaveDto {}
 
 export class RejectLeaveDto {
   @IsString()
   reason: string;
+}
+
+export class SetLeaveBalanceDto {
+  @IsNumber()
+  @Min(0)
+  @Max(365)
+  accrued: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(365)
+  carriedForward?: number;
 }
 
 export class CreateLeaveTypeDto {

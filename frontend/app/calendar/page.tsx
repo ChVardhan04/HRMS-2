@@ -34,11 +34,15 @@ export default function CalendarPage() {
   const [date, setDate] = useState('');
   const [optional, setOptional] = useState('false');
   const [editingHolidayId, setEditingHolidayId] = useState<string | null>(null);
+  const user = useAuthStore((s) => s.user);
   const canManage = useAuthStore((s) => s.hasRole('HR_ADMIN', 'SUPER_ADMIN'));
+  const [departmentId, setDepartmentId] = useState('');
+  const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: () => api.get<any[]>('/departments'), enabled: canManage });
+  const effectiveDepartmentId = canManage ? (departmentId || user?.employee?.department?.id || '') : (user?.employee?.department?.id || '');
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: settings } = useQuery({ queryKey: ['calendar', 'settings'], queryFn: () => api.get<any>('/calendar/settings') });
-  const { data: summary } = useQuery({ queryKey: ['calendar', 'summary', month, year], queryFn: () => api.get<any>(`/calendar/summary?month=${month}&year=${year}`) });
+  const { data: settings } = useQuery({ queryKey: ['calendar', 'department-policy', effectiveDepartmentId], queryFn: () => effectiveDepartmentId ? api.get<any>(`/departments/${effectiveDepartmentId}?month=${month}&year=${year}`).then((d:any)=>d.policy) : api.get<any>('/calendar/settings') });
+  const { data: summary } = useQuery({ queryKey: ['calendar', 'summary', month, year, effectiveDepartmentId], queryFn: () => api.get<any>(`/calendar/summary?month=${month}&year=${year}${effectiveDepartmentId?`&departmentId=${effectiveDepartmentId}`:''}`) });
   const { data: holidays } = useQuery({ queryKey: ['calendar', 'holidays', year], queryFn: () => api.get<any[]>(`/calendar/holidays?year=${year}`) });
   const addHoliday = useMutation({
     mutationFn: () => api.post('/calendar/holidays', { name, date, isOptional: optional === 'true' }),
@@ -65,13 +69,14 @@ export default function CalendarPage() {
   return (
     <AppShell title="Company Calendar">
       <div className="flex flex-col gap-4">
+        {canManage && <div className="flex flex-wrap items-center gap-2 rounded-lg border p-3"><Label>Department calendar</Label><Select value={effectiveDepartmentId || 'ORG'} onValueChange={(v)=>setDepartmentId(v==='ORG'?'':v)}><SelectTrigger className="w-64"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="ORG">Organization default</SelectItem>{departments?.map((d:any)=><SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select></div>}
         <div className="grid gap-4 lg:grid-cols-3">
-          <Card><CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /> Working days</CardTitle></CardHeader><CardContent><p className="text-3xl font-semibold">{summary?.workingDays ?? '-'}</p><p className="text-xs text-muted-foreground">{monthName(month)} {year} · company working days</p></CardContent></Card>
-          <Card><CardHeader><CardTitle>Company hours</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">{hours}</p><p className="text-xs text-muted-foreground">Lunch {settings ? `${minutesToTime(settings.lunchStartMinutes)} – ${minutesToTime(settings.lunchEndMinutes)}` : '-'} · Attendance call {settings ? `${minutesToTime(settings.attendanceCallStartMinutes)} – ${minutesToTime(settings.attendanceCallEndMinutes)}` : '-'}</p></CardContent></Card>
-          <Card><CardHeader><CardTitle>Saturday policy</CardTitle></CardHeader><CardContent><p className="text-lg font-semibold">{settings?.saturdayWorkPattern === 'FIRST_THIRD_WORKING' ? '1st & 3rd Saturday working' : settings?.saturdayWorkPattern?.replaceAll('_', ' ') ?? '-'}</p><p className="text-xs text-muted-foreground">Sunday is non-working by default.</p></CardContent></Card>
+          <Card><CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /> Working days</CardTitle></CardHeader><CardContent><p className="text-3xl font-semibold">{summary?.workingDays ?? '-'}</p><p className="text-xs text-muted-foreground">{monthName(month)} {year} · {effectiveDepartmentId ? 'department working days' : 'organization default'}</p></CardContent></Card>
+          <Card><CardHeader><CardTitle>Company hours</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">{hours}</p><p className="text-xs text-muted-foreground">Lunch {settings ? `${minutesToTime(settings.lunchStartMinutes)} – ${minutesToTime(settings.lunchEndMinutes)}` : '-'} · Attendance call {settings?.attendanceCallStartMinutes != null ? `${minutesToTime(settings.attendanceCallStartMinutes)} – ${minutesToTime(settings.attendanceCallEndMinutes)}` : 'Configured by department'}</p></CardContent></Card>
+          <Card><CardHeader><CardTitle>Saturday policy</CardTitle></CardHeader><CardContent><p className="text-lg font-semibold">{settings?.saturdayWorkPattern === 'FIRST_THIRD_WORKING' ? '1st & 3rd Saturday working' : settings?.saturdayWorkPattern?.replaceAll('_', ' ') ?? '-'}</p><p className="text-xs text-muted-foreground">{effectiveDepartmentId ? 'Employee calendar follows the selected department policy.' : 'No department assigned; organization default applies.'}</p></CardContent></Card>
         </div>
 
-        {canManage && settings && <Card>
+        {canManage && settings && !effectiveDepartmentId && <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-primary" /> HR attendance policy</CardTitle></CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div><Label>Office start</Label><Input type="time" defaultValue={minutesToTime(settings.officeStartMinutes)} onBlur={(e) => updateSettings.mutate({ officeStartMinutes: timeToMinutes(e.target.value) })} /></div>

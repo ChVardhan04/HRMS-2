@@ -1,6 +1,6 @@
 'use client';
 
-import { Clock, LogIn, LogOut } from 'lucide-react';
+import { Clock, LogIn, LogOut, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -12,16 +12,24 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import {
   useCheckIn,
   useCheckOut,
+  useUndoCheckOut,
+  useUndoCheckIn,
   useTodayWorkDay,
 } from '@/features/workday/use-workday';
 import { formatDateTime } from '@/lib/utils';
 import { useTodoEodStatus } from '@/features/todos/use-todos';
+import { useAuthStore } from '@/lib/auth-store';
 
 export function CheckInWidget() {
   const { data: workDay, isLoading } = useTodayWorkDay();
   const checkIn = useCheckIn();
   const checkOut = useCheckOut();
+  const undoCheckOut = useUndoCheckOut();
+  const undoCheckIn = useUndoCheckIn();
   const { data: eod } = useTodoEodStatus();
+  const isEmployee = useAuthStore((s) =>
+    s.hasRole('EMPLOYEE') && !s.hasRole('MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'),
+  );
 
   const hasPendingTasks = (eod?.pending ?? 0) > 0;
 
@@ -33,8 +41,7 @@ export function CheckInWidget() {
     !workDay?.checkInAt ||
     !!workDay?.checkOutAt ||
     checkOut.isPending ||
-    hasPendingTasks ||
-    !dprReady;
+    (isEmployee && (hasPendingTasks || !dprReady));
 
   return (
     <Card>
@@ -88,12 +95,10 @@ export function CheckInWidget() {
             </div>
 
             {/* Checkout warning */}
-            {workDay?.checkInAt &&
+            {isEmployee &&
+              workDay?.checkInAt &&
               !workDay?.checkOutAt &&
-              (
-                hasPendingTasks ||
-                !dprReady
-              ) && (
+              (hasPendingTasks || !dprReady) && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                   Before checkout: resolve{' '}
                   {eod?.pending ?? 0} pending task(s) and
@@ -104,7 +109,7 @@ export function CheckInWidget() {
               )}
 
             {/* Actions */}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 className="flex-1"
                 disabled={
@@ -117,15 +122,38 @@ export function CheckInWidget() {
                 Check in
               </Button>
 
-              <Button
-                variant="outline"
-                className="flex-1"
-                disabled={checkoutBlocked}
-                onClick={() => checkOut.mutate({})}
-              >
-                <LogOut className="h-4 w-4" />
-                Check out
-              </Button>
+              {workDay?.checkOutAt ? (
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={undoCheckOut.isPending}
+                  onClick={() => undoCheckOut.mutate()}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Undo checkout
+                </Button>
+              ) : workDay?.checkInAt ? (
+                <>
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    disabled={checkoutBlocked}
+                    onClick={() => checkOut.mutate({})}
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Check out
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="flex-1"
+                    disabled={undoCheckIn.isPending}
+                    onClick={() => undoCheckIn.mutate()}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    Undo check-in
+                  </Button>
+                </>
+              ) : null}
             </div>
           </div>
         )}

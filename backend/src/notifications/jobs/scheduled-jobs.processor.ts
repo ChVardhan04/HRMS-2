@@ -46,6 +46,8 @@ export class ScheduledJobsProcessor extends WorkerHost {
           return await this.resolve(
             GroupMonitorSchedulerService,
           ).runCheckReminderSweep();
+        case JobName.KRA_DAILY_CALC:
+          return await this.resolve(KraSchedulerService).runDailyCalculation();
         case JobName.KRA_PRECALC:
           return await this.resolve(KraSchedulerService).runPreCalculation();
         case JobName.KRA_FINALIZE:

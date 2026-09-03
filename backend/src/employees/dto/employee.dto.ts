@@ -23,8 +23,28 @@ export class CreateEmployeeDto {
   lastName: string;
 
   @IsOptional()
+  @IsEmail()
+  personalEmail?: string;
+
+  @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyContact?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyAddress?: string;
 
   @IsDateString()
   dateOfJoining: string;
@@ -80,8 +100,28 @@ export class UpdateEmployeeDto {
   lastName?: string;
 
   @IsOptional()
+  @IsEmail()
+  personalEmail?: string;
+
+  @IsOptional()
   @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyContact?: string;
+
+  @IsOptional()
+  @IsString()
+  emergencyAddress?: string;
 
   @IsOptional()
   @IsDateString()

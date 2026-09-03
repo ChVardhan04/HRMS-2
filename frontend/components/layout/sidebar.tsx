@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Users, Clock, ListChecks, FileText, CalendarDays, Settings2, BarChart3,
-  BriefcaseBusiness, MessagesSquare, Target, ShieldAlert, FolderLock, UserCircle2,
+  BriefcaseBusiness, MessagesSquare, Target, ShieldAlert, FolderLock, UserCircle2, Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/auth-store';
@@ -23,6 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dpr', label: 'DPR', icon: FileText },
   { href: '/leave', label: 'Leave', icon: CalendarDays },
   { href: '/employees', label: 'Employees', icon: Users, roles: ['HR_ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
+  { href: '/departments', label: 'Departments', icon: Building2, roles: ['HR_ADMIN', 'SUPER_ADMIN'] },
   { href: '/calendar', label: 'Company Calendar', icon: CalendarDays },
   { href: '/policies', label: 'Policies', icon: FileText },
   { href: '/documents', label: 'Documents', icon: FolderLock },

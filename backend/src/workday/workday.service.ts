@@ -36,7 +36,7 @@ export class WorkdayService {
     this.timezoneCache = org.timezone;
     const day = this.startOfDay(date, org.timezone);
 
-    const calendar = await this.calendarService.isWorkingDay(day);
+    const calendar = await this.calendarService.isWorkingDayForEmployee(employeeId, day);
     const defaultStatus =
       calendar.type === "HOLIDAY"
         ? AttendanceStatus.HOLIDAY

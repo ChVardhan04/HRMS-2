@@ -97,6 +97,7 @@ export async function downloadFile(path: string, fileName: string) {
 export const api = {
   get: <T = unknown>(path: string) => apiFetch<T>(path, { method: 'GET' }),
   post: <T = unknown>(path: string, body?: unknown, opts: RequestInit & { skipAuth?: boolean } = {}) => apiFetch<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined, ...opts }),
+  postForm: <T = unknown>(path: string, form: FormData) => apiFetch<T>(path, { method: 'POST', body: form }),
   patch: <T = unknown>(path: string, body?: unknown) => apiFetch<T>(path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
   delete: <T = unknown>(path: string) => apiFetch<T>(path, { method: 'DELETE' }),
   setTokens,

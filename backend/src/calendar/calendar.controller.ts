@@ -30,11 +30,16 @@ export class CalendarController {
   }
 
   @Get("summary")
-  summary(@Query("month") month: string, @Query("year") year: string) {
+  summary(
+    @Query("month") month: string,
+    @Query("year") year: string,
+    @Query("departmentId") departmentId?: string,
+  ) {
     const now = new Date();
     return this.calendarService.workingDaySummary(
       Number(month) || now.getMonth() + 1,
       Number(year) || now.getFullYear(),
+      departmentId,
     );
   }
 

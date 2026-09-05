@@ -135,6 +135,24 @@ export class CalendarService {
     };
   }
 
+  async settingsForEmployee(employeeId: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: {
+        departmentId: true,
+        department: { select: { id: true, name: true } },
+      },
+    });
+    if (!employee) throw new NotFoundException("Employee not found");
+    const policy = await this.getEmployeePolicy(employeeId);
+    return {
+      ...policy,
+      employeeDepartmentId: employee.department?.id ?? null,
+      employeeDepartmentName: employee.department?.name ?? null,
+      calendarScope: employee.department ? "DEPARTMENT" : "ORGANIZATION",
+    };
+  }
+
   async updateSettings(dto: CalendarSettingsDto) {
     const org = await this.getOrganization();
     const officeStart = dto.officeStartMinutes ?? org.officeStartMinutes;

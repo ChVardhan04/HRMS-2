@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CalendarService } from "../calendar/calendar.service";
 import { AttendanceStatus, RoleName } from "@prisma/client";
+import { canRegulariseWorkDay } from "../attendance/regularisation.rules";
 
 /**
  * WorkdayService is the sync hub described in the plan (section 6): every employee has exactly
@@ -112,7 +113,7 @@ export class WorkdayService {
     }
     const org = await this.calendarService.getOrganization();
     this.timezoneCache = org.timezone;
-    return this.prisma.workDay.findMany({
+    const rows = await this.prisma.workDay.findMany({
       where: {
         employeeId,
         date: {
@@ -123,6 +124,14 @@ export class WorkdayService {
       orderBy: { date: "desc" },
       include: { todos: true, dpr: true },
     });
+
+    // The "Fix"/regularisation rule lives in AttendanceService so the UI and the
+    // API can never disagree about which rows are fixable. The UI must render
+    // its Fix button from this flag rather than re-deriving it from the status.
+    return rows.map((workDay) => ({
+      ...workDay,
+      canRegularise: canRegulariseWorkDay(workDay),
+    }));
   }
 
   async teamToday(employeeId: string, roles: string[] = []) {

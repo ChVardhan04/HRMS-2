@@ -41,4 +41,11 @@ If the AI provider is unavailable, the HRMS uses a deterministic fallback and re
 
 When S3-compatible storage credentials are present, the normal S3 adapter is used. Without them, local development storage is used automatically under `backend/uploads/`. Do not commit uploaded files.
 
+## Main documentation
 
+- `docs/FINAL_EOD_TASK_AI_ATS_FLOW.md`
+- `docs/BUSINESS_RULES.md`
+- `docs/API.md`
+- `docs/DATABASE.md`
+- `docs/TESTING.md`
+- `docs/PRODUCTION_CHECKLIST.md`

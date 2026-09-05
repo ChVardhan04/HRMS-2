@@ -273,12 +273,19 @@ export default function AttendancePage() {
                       </TableCell>
 
                       <TableCell>
-                        {(wd.attendanceStatus === 'LATE' ||
-                          wd.attendanceStatus === 'HALF_DAY' ||
-                          (wd.checkInAt && !wd.checkOutAt)) && (
+                        {/*
+                          `canRegularise` is computed by the API from the single
+                          shared rule (see backend regularisation.rules.ts), so
+                          this button can never disagree with what the server
+                          will accept. It appears only for absent, late,
+                          half-day or missing-checkout rows — never for a clean
+                          Present, Weekend, Holiday or Leave day.
+                        */}
+                        {wd.canRegularise && (
                           <Button
                             size="sm"
                             variant="ghost"
+                            title="Fix an attendance issue for this day (late or missing check-in, missing check-out)"
                             onClick={() => {
                               setRegularise(wd);
                               setReason('');

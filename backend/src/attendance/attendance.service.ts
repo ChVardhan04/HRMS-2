@@ -8,6 +8,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { WorkdayService } from "../workday/workday.service";
 import { CalendarService } from "../calendar/calendar.service";
 import { CheckInDto, CheckOutDto } from "./dto/attendance.dto";
+import { canRegulariseWorkDay } from "./regularisation.rules";
 
 @Injectable()
 export class AttendanceService {
@@ -521,15 +522,9 @@ export class AttendanceService {
       );
     }
 
-    const needsRegularisation =
-      workDay.isLate ||
-      workDay.attendanceStatus === AttendanceStatus.HALF_DAY ||
-      workDay.attendanceStatus === AttendanceStatus.ABSENT ||
-      (!!workDay.checkInAt && !workDay.checkOutAt);
-
-    if (!needsRegularisation) {
+    if (!canRegulariseWorkDay(workDay)) {
       throw new BadRequestException(
-        "Regularisation is only available for late, absent, half-day, or incomplete attendance records.",
+        "Regularisation is only available for absent, late, half-day, or incomplete attendance records. This day is already recorded correctly.",
       );
     }
 
@@ -664,49 +659,80 @@ export class AttendanceService {
           },
         });
 
-        const data: any = {
-          attendanceStatus: checkIn
-            ? AttendanceStatus.PRESENT
-            : record.workDay.attendanceStatus,
-        };
+        // Use the employee's own department policy (lunch window, timezone,
+        // late thresholds) rather than the org default, so an approved
+        // regularisation is evaluated by exactly the same rules as a live
+        // check-in/check-out.
+        const policy =
+          await this.calendarService.getEmployeePolicy(
+            record.workDay.employeeId,
+          );
 
-        if (checkIn) {
-          data.checkInAt = checkIn;
-        }
+        const data: any = {};
 
-        if (checkOut) {
-          data.checkOutAt = checkOut;
+        const effectiveCheckIn =
+          checkIn ?? record.workDay.checkInAt ?? null;
+        const effectiveCheckOut =
+          checkOut ?? record.workDay.checkOutAt ?? null;
 
-          const calendar =
-            await this.calendarService.getOrganization();
+        if (checkIn) data.checkInAt = checkIn;
+        if (checkOut) data.checkOutAt = checkOut;
 
+        let workingHours =
+          record.workDay.workingHours == null
+            ? null
+            : Number(record.workDay.workingHours);
+
+        if (effectiveCheckIn && effectiveCheckOut) {
           const gross =
             Math.max(
               0,
-              checkOut.getTime() -
-                (
-                  checkIn ??
-                  record.workDay.checkInAt ??
-                  checkOut
-                ).getTime(),
+              effectiveCheckOut.getTime() -
+                effectiveCheckIn.getTime(),
             ) / 60000;
 
-          const breakMin = checkIn
-            ? this.breakMinutes(
-                checkIn,
-                checkOut,
-                calendar.lunchStartMinutes,
-                calendar.lunchEndMinutes,
-                calendar.timezone,
-              )
-            : 0;
+          // The lunch break must always be deducted. Previously it was skipped
+          // whenever only a check-out was supplied, which inflated hours.
+          const breakMin = this.breakMinutes(
+            effectiveCheckIn,
+            effectiveCheckOut,
+            policy.lunchStartMinutes,
+            policy.lunchEndMinutes,
+            policy.timezone,
+          );
 
-          data.workingHours = Number(
-            Math.max(
-              0,
-              gross - breakMin,
-            ) / 60,
-          ).toFixed(2);
+          workingHours = Number(
+            (Math.max(0, gross - breakMin) / 60).toFixed(2),
+          );
+          data.workingHours = workingHours;
+        }
+
+        // Re-derive the corrected status from the approved times.
+        if (effectiveCheckIn) {
+          const correctedMinutes = this.localMinutes(
+            effectiveCheckIn,
+            policy.timezone,
+          );
+          const stillLate =
+            correctedMinutes > policy.lateAfterMinutes;
+          const shortDay =
+            workingHours != null && workingHours < 4;
+
+          data.attendanceStatus = shortDay
+            ? AttendanceStatus.HALF_DAY
+            : stillLate
+              ? AttendanceStatus.LATE
+              : AttendanceStatus.PRESENT;
+
+          // Clearing the late flags is what actually resolves the record.
+          // Leaving isLate/latePenaltyDays set kept the day counting as a
+          // late in the monthly report and kept the Fix button visible on a
+          // row that now displayed as PRESENT.
+          data.isLate = stillLate;
+          if (!stillLate) {
+            data.lateCountInMonth = null;
+            data.latePenaltyDays = 0;
+          }
         }
 
         return tx.workDay.update({

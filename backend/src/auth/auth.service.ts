@@ -242,17 +242,25 @@ export class AuthService {
     return { success: true, email: activation.user.email };
   }
 
-  async resendActivation(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || !user.mustChangePassword || !user.isActive) {
-      return { success: true };
-    }
+  /**
+   * Issues a fresh activation token for a user and emails the activation link.
+   * This is the ONLY supported way to hand a newly created account to a person —
+   * `login` refuses any account with mustChangePassword = true, so an account
+   * created without calling this can never be signed into.
+   *
+   * Used by employee onboarding (EmployeesService) and by offer acceptance
+   * (InterviewsService) so both paths behave identically.
+   */
+  async sendActivationLink(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new BadRequestException("User not found");
 
     const rawToken = await this.createActivationToken(user.id);
     const url = this.activationUrl(rawToken);
     const ttlHours = Number(
       process.env.ACCOUNT_ACTIVATION_TTL_HOURS ?? DEFAULT_ACTIVATION_TTL_HOURS,
     );
+
     await this.notifications.sendEmail({
       to: user.email,
       subject: "Activate your HRMS account",
@@ -261,6 +269,15 @@ export class AuthService {
     });
 
     return { success: true };
+  }
+
+  async resendActivation(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !user.mustChangePassword || !user.isActive) {
+      return { success: true };
+    }
+
+    return this.sendActivationLink(user.id);
   }
 
   async forgotPassword(email: string) {

@@ -1,0 +1,13 @@
+-- Store how each KRA metric is evaluated and which HRMS evidence can substantiate it.
+ALTER TABLE "KRAItem" ADD COLUMN IF NOT EXISTS "evidenceSource" TEXT NOT NULL DEFAULT 'HRMS_ACTIVITY';
+ALTER TABLE "KRAItem" ADD COLUMN IF NOT EXISTS "evaluationMethod" TEXT NOT NULL DEFAULT 'Evaluate only from recorded HRMS evidence; reduce confidence when evidence is missing.';
+
+-- Existing templates are evaluated from recorded HRMS evidence rather than manual scores.
+UPDATE "KRAItem" SET "isAutomated" = TRUE;
+
+-- Map common HR-provided metrics to the evidence that HRMS can actually substantiate.
+UPDATE "KRAItem" SET "evidenceSource" = 'TASKS|DPR', "evaluationMethod" = 'Use assigned tasks, completion outputs and DPR entries that document the prepared presentation/document; do not count an artifact unless it is recorded in HRMS.' WHERE UPPER("name") LIKE '%PPT%' OR UPPER("name") LIKE '%DOCUMENT PREPARATION%';
+UPDATE "KRAItem" SET "evidenceSource" = 'TASKS', "evaluationMethod" = 'Compare completed tasks against their recorded due dates; missing due dates are not treated as on-time evidence.' WHERE UPPER("name") LIKE '%DEADLINE%' OR UPPER("name") LIKE '%ON-TIME%' OR UPPER("name") LIKE '%ON TIME%';
+UPDATE "KRAItem" SET "evidenceSource" = 'DPR_QUALITY|TASK_AI|DPR', "evaluationMethod" = 'Use manager-reviewed DPR quality scores plus task AI analysis and documented outputs; lower confidence when review evidence is absent.' WHERE UPPER("name") LIKE '%ACCURACY%' OR UPPER("name") LIKE '%GUIDELINE%' OR UPPER("name") LIKE '%COMPLIANCE%' OR UPPER("name") LIKE '%ERROR%';
+UPDATE "KRAItem" SET "evidenceSource" = 'COMMENTS|DPR|TASKS', "evaluationMethod" = 'Use documented task comments, DPR entries, outputs, blockers, plans and completed work; do not infer interpersonal behavior without records.' WHERE UPPER("name") LIKE '%COORDINATION%' OR UPPER("name") LIKE '%COMMUNICATION%' OR UPPER("name") LIKE '%OWNERSHIP%' OR UPPER("name") LIKE '%INITIATIVE%' OR UPPER("name") LIKE '%PROBLEM%' OR UPPER("name") LIKE '%RESOLUTION%';
+UPDATE "KRAItem" SET "evidenceSource" = 'ATS_ACTIVITY|TASKS|DPR', "evaluationMethod" = 'Use HRMS/ATS activities performed by the employee plus task and DPR evidence. External activity without an HRMS record must not be invented.' WHERE UPPER("name") LIKE '%LEAD%' OR UPPER("name") LIKE '%BANT%' OR UPPER("name") LIKE '%CALL%' OR UPPER("name") LIKE '%EMAIL%' OR UPPER("name") LIKE '%MEETING%' OR UPPER("name") LIKE '%CRM%' OR UPPER("name") LIKE '%OUTREACH%' OR UPPER("name") LIKE '%LINKEDIN%' OR UPPER("name") LIKE '%PIPELINE%' OR UPPER("name") LIKE '%PROPOSAL%' OR UPPER("name") LIKE '%REVENUE%';

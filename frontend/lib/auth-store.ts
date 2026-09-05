@@ -26,6 +26,7 @@ export interface SessionUser {
     department?: { id: string; name: string } | null;
     designation?: { id: string; title: string } | null;
     managerId?: string | null;
+    dateOfBirth?: string | null;
   } | null;
 }
 

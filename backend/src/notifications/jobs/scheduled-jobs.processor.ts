@@ -10,6 +10,7 @@ import { GroupMonitorSchedulerService } from "../../group-monitor/group-monitor-
 import { KraSchedulerService } from "../../kra/kra-scheduler.service";
 import { LeaveSchedulerService } from "../../leave/leave-scheduler.service";
 import { AttendanceSchedulerService } from "../../attendance/attendance-scheduler.service";
+import { BirthdaySchedulerService } from "./birthday-scheduler.service";
 
 /**
  * Single worker for the scheduled-jobs queue. Each sweep's business logic lives in its owning
@@ -62,6 +63,8 @@ export class ScheduledJobsProcessor extends WorkerHost {
           return await this.resolve(
             AttendanceSchedulerService,
           ).runAutoAbsentSweep();
+        case JobName.BIRTHDAY_SWEEP:
+          return await this.resolve(BirthdaySchedulerService).runBirthdaySweep();
         default:
           this.logger.warn(`Unhandled job: ${job.name}`);
       }

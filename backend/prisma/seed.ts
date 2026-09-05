@@ -5,11 +5,28 @@ const prisma = new PrismaClient();
 
 const DEFAULT_DEPARTMENTS = ['Namandarshan', 'Traininglobe', 'Webisdom', 'Dentedge', 'Perfecto', 'Human Resources'];
 
+function kraEvidenceMeta(label: string) {
+  const key = label.trim().toUpperCase();
+  if (key.includes('ATTENDANCE') || key.includes('PUNCTUAL')) return { evidenceSource: 'ATTENDANCE', evaluationMethod: 'Use department-specific expected working days, attendance status, check-in time, late count and late penalty days.' };
+  if (key.includes('DPR') || key.includes('DAILY REPORT') || key.includes('REPORTING')) return { evidenceSource: 'DPR', evaluationMethod: 'Compare submitted DPRs with expected working days and inspect recorded DPR entries, outputs, blockers and plans.' };
+  if (key.includes('PPT') || key.includes('DOCUMENT PREPARATION') || key.includes('PRESENTATION')) return { evidenceSource: 'TASKS|DPR', evaluationMethod: 'Use assigned tasks, completion outputs and DPR entries that document the prepared presentation/document; do not count an artifact unless it is recorded in HRMS.' };
+  if (key.includes('DEADLINE') || key.includes('ON-TIME') || key.includes('ON TIME')) return { evidenceSource: 'TASKS', evaluationMethod: 'Compare completed tasks against their recorded due dates; missing due dates are not treated as on-time evidence.' };
+  if (key.includes('TASK') || key.includes('COMPLETENESS') || key.includes('PRODUCTIVITY') || key.includes('DELIVERY')) return { evidenceSource: 'TASKS|TASK_AI', evaluationMethod: 'Use task status, EOD status, completion output, proof metadata and task AI completion analysis.' };
+  if (key.includes('QUALITY') || key.includes('ACCURACY') || key.includes('GUIDELINE') || key.includes('COMPLIANCE') || key.includes('ERROR')) return { evidenceSource: 'DPR_QUALITY|TASK_AI|DPR', evaluationMethod: 'Use manager-reviewed DPR quality scores plus task AI analysis and documented outputs; lower confidence when review evidence is absent.' };
+  if (key.includes('LEAD') || key.includes('BANT') || key.includes('CALL') || key.includes('EMAIL') || key.includes('MEETING') || key.includes('CRM') || key.includes('OUTREACH') || key.includes('LINKEDIN') || key.includes('PIPELINE') || key.includes('PROPOSAL') || key.includes('REVENUE')) return { evidenceSource: 'ATS_ACTIVITY|TASKS|DPR', evaluationMethod: 'Use HRMS/ATS activities performed by the employee plus task and DPR evidence. External activity without an HRMS record must not be invented.' };
+  if (key.includes('COLLAB') || key.includes('COMMUNICATION') || key.includes('COORDINATION') || key.includes('OWNERSHIP') || key.includes('INITIATIVE') || key.includes('PROBLEM') || key.includes('RESOLUTION') || key.includes('MENTOR') || key.includes('SUPERVISION') || key.includes('TRAINING')) return { evidenceSource: 'COMMENTS|DPR|TASKS', evaluationMethod: 'Use documented task comments, DPR entries, outputs, blockers, plans and completed work; do not infer interpersonal behavior without records.' };
+  return { evidenceSource: 'HRMS_ACTIVITY', evaluationMethod: 'Evaluate only from recorded HRMS activity, including attendance, tasks, DPR and available review evidence. Missing evidence lowers confidence.' };
+}
+
 async function seedKraTemplate(orgId: string, id: string, roleName: string, name: string, itemNames: string[], weights?: number[], departmentId?: string, designationId?: string) {
+  const otherActive = departmentId && designationId
+    ? await prisma.kRATemplate.findFirst({ where: { organizationId: orgId, departmentId, designationId, isActive: true, id: { not: id } }, select: { id: true } })
+    : null;
+  const shouldBeActive = !otherActive;
   const template = await prisma.kRATemplate.upsert({
     where: { id },
-    create: { id, organizationId: orgId, roleName, name, departmentId, designationId, isDefault: id === 'seed-default-template', isActive: true },
-    update: { roleName, name, departmentId, designationId, isActive: true, isDefault: id === 'seed-default-template' },
+    create: { id, organizationId: orgId, roleName, name, departmentId, designationId, isDefault: id === 'seed-default-template', isActive: shouldBeActive },
+    update: { roleName, name, departmentId, designationId, isActive: shouldBeActive, isDefault: id === 'seed-default-template' },
   });
   await prisma.kRAItem.deleteMany({ where: { templateId: template.id } });
   const equal = Number((100 / itemNames.length).toFixed(2));
@@ -23,7 +40,8 @@ async function seedKraTemplate(orgId: string, id: string, roleName: string, name
         targetText: target?.trim() || null,
         weightPercent: weights?.[i] ?? (i === itemNames.length - 1 ? Number((100 - equal * (itemNames.length - 1)).toFixed(2)) : equal),
         measurementType: 'PERCENTAGE' as any,
-        isAutomated: ['DPR_SUBMISSION', 'TASK_COMPLETION', 'ATTENDANCE', 'DPR_QUALITY'].includes(label.trim()),
+        isAutomated: true,
+        ...kraEvidenceMeta(label),
         sortOrder: i,
       },
     });
@@ -163,21 +181,20 @@ async function main() {
     'SEO Activity Monitoring','SEO Performance Reporting','Google My Business Management','Quora Engagement and Content Posting','Forum Posting and Participation','Backlink Profile Monitoring','SEO Audit and Issue Identification','Competitor SEO Tracking','Content Performance Tracking','Research & Trend Identification','SEO Data Analysis','Monthly SEO Performance Report','Tracker Maintenance'
   ], undefined, departments['Webisdom'].id, webisdomDesignations['SEO Analyst'].id);;
   await seedKraTemplate(org.id, 'kra-social-media', 'Social Media', 'Social Media KRA', ['Engagement Metrics','Follower Growth','Reach & Impressions','Content Performance','Team Performance','Lead Generation'], undefined, departments['Webisdom'].id, webisdomDesignations['Social Media'].id)
-  await seedKraTemplate(org.id, 'kra-digital-analyst-intern', 'Digital Analyst Intern', 'Digital Analyst Intern KRA', ['Documents Presentation (PPT) Prepared||2/day','Deadline Adherence','Content Accuracy','Completeness','Compliance with Guidelines','Collaboration and Communication','Problem-Solving & Initiative'], undefined, departments['Webisdom'].id, webisdomDesignations['Digital Analyst Intern'].id)
+  await seedKraTemplate(org.id, 'kra-digital-analyst-intern', 'Digital Analyst Intern', 'Digital Analyst Intern KRA', [
+    'Documents Presentation (PPT) Prepared||2 presentations/documents per working day when assigned',
+    'Deadline Adherence||Assigned PPT/document tasks submitted within their recorded due date/EOD commitment',
+    'Content Accuracy||Accurate task outputs with manager-reviewed quality and AI task evidence',
+    'Completeness||Assigned work completed with documented output/proof and DPR evidence',
+    'Compliance with Guidelines||Recorded deliverables follow the documented task brief/guidelines',
+    'Collaboration and Communication||Documented coordination through task comments, DPR updates and manager review',
+    'Problem-Solving & Initiative||Documented blockers, resolutions, proactive outputs and completed work'
+  ], undefined, departments['Webisdom'].id, webisdomDesignations['Digital Analyst Intern'].id)
   await seedKraTemplate(org.id, 'kra-designer', 'Designer', 'Designer KRA', ['Design Quality','Website Quality','Video Quality','Creativity & Originality','Brand Guidelines & Brief','User Experience (UX) Design','Timeliness of Delivery','Adaptability Across Formats','Client & Team Collaboration','Attention to Detail','Software Proficiency & Skill Development','Trend Adoption & Implementation','Productivity','Design Revisions & Iterations','Audio-Visual Synchronization','Rendering & Export Quality','Prototyping & Wireframing','User Research & Testing','Responsiveness & Adaptability','Accessibility Compliance','Information Architecture','Interaction & Visual Design'], undefined, departments['Webisdom'].id, webisdomDesignations['Designer'].id)
   await seedKraTemplate(org.id, 'kra-client-servicing', 'Client Servicing & Project Handling', 'Client Servicing & Project Handling KRA', ['Active Clients Handled||10–20+','Client Retention||90%+','Client Renewal||3–5+/month','Client Meetings||15–25+/month','Client Follow-Ups||100%','Client Satisfaction||90%+','Project Handling||10–20+/month','Project Delivery||90–100%','Requirement Accuracy||95%+','Quality of Deliverables||95%+','Presales Support||3–5+/month','Upselling – Existing Clients||2–3+/month','Cross-Selling – Existing/Old Clients||2–3+/month','Revenue from Existing Clients||Track separately','Reactivation of Old Clients||5–10+/month','Old Client Conversion||1–2+/month','Referral Generation||1–3+/month','Client Expansion','Payment & Commercial Follow-up||100%','Issue Resolution','Internal Coordination||100%','Client Documentation||100%','Reporting & MIS||100%','Client Relationship Development','Initiative & Ownership'], undefined, departments['Webisdom'].id, webisdomDesignations['Client Servicing & Project Handling'].id)
   await seedKraTemplate(org.id, 'kra-bd-team', 'BD Team', 'BD Team KRA / Performance Summary', [
-  'Lead Generation & BANT Qualification||10–15 BANT-qualified Indian leads + 5 international leads/month',
-  'Client Meetings||20–30 qualified meetings/month',
-  'Lead Nurturing & Follow-ups',
-  'Pipeline Management',
-  'Proposal & Pitching',
-  'Closures & Revenue Generation',
-  'Client Engagement & Relationship Building',
-  'CRM/Tracker & Reporting||100% accurate and timely',
-  'Communication & Presentation',
-  'Initiative, Ownership & Coordination'
-], [15,10,10,10,10,25,5,5,5,5], departments['Webisdom'].id, webisdomDesignations['BD Team'].id);
+    'Lead Generation & BANT Qualification||10–15 BANT-qualified Indian leads + 5 international leads/month','Client Meetings||20–30 qualified meetings/month','Lead Nurturing & Follow-ups','Pipeline Management','Proposal & Pitching','Closures & Revenue Generation','Client Engagement & Relationship Building','CRM/Tracker & Reporting||100% accurate and timely','Communication & Presentation','Initiative, Ownership & Coordination'
+  ], [15,10,10,10,10,25,5,5,5,5], departments['Webisdom'].id, webisdomDesignations['BD Team'].id);
 
   console.log('Seeding holidays...');
   const holidays = [

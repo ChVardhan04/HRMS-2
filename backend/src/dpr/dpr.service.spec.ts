@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { DprService } from "./dpr.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { TaskCompletionAiService } from "../todos/task-completion-ai.service";
 
 /**
  * Focused unit test for the sync-engine conflict detection described in plan section 6.4.
@@ -30,6 +31,12 @@ describe("DprService", () => {
         DprService,
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: { notify: jest.fn() } },
+        // DprService gained this dependency; without it the whole suite failed
+        // to compile with "Nest can't resolve dependencies of the DprService".
+        {
+          provide: TaskCompletionAiService,
+          useValue: { analyzeTask: jest.fn(), analyzeWorkDay: jest.fn() },
+        },
       ],
     }).compile();
 

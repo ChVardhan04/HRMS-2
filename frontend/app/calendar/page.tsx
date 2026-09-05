@@ -38,11 +38,14 @@ export default function CalendarPage() {
   const canManage = useAuthStore((s) => s.hasRole('HR_ADMIN', 'SUPER_ADMIN'));
   const [departmentId, setDepartmentId] = useState('');
   const { data: departments } = useQuery({ queryKey: ['departments'], queryFn: () => api.get<any[]>('/departments'), enabled: canManage });
-  const effectiveDepartmentId = canManage ? (departmentId || user?.employee?.department?.id || '') : (user?.employee?.department?.id || '');
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: settings } = useQuery({ queryKey: ['calendar', 'department-policy', effectiveDepartmentId], queryFn: () => effectiveDepartmentId ? api.get<any>(`/departments/${effectiveDepartmentId}?month=${month}&year=${year}`).then((d:any)=>d.policy) : api.get<any>('/calendar/settings') });
-  const { data: summary } = useQuery({ queryKey: ['calendar', 'summary', month, year, effectiveDepartmentId], queryFn: () => api.get<any>(`/calendar/summary?month=${month}&year=${year}${effectiveDepartmentId?`&departmentId=${effectiveDepartmentId}`:''}`) });
+  const { data: myCalendarSettings } = useQuery({ queryKey: ['calendar', 'me', 'settings'], queryFn: () => api.get<any>('/calendar/me/settings'), enabled: Boolean(user) });
+  const resolvedEmployeeDepartmentId = myCalendarSettings?.employeeDepartmentId ?? user?.employee?.department?.id ?? '';
+  const effectiveDepartmentId = canManage ? (departmentId || resolvedEmployeeDepartmentId) : resolvedEmployeeDepartmentId;
+  const effectiveDepartmentName = departments?.find((d:any) => d.id === effectiveDepartmentId)?.name ?? myCalendarSettings?.employeeDepartmentName ?? null;
+  const { data: settings } = useQuery({ queryKey: ['calendar', 'department-policy', effectiveDepartmentId, resolvedEmployeeDepartmentId], queryFn: () => effectiveDepartmentId ? api.get<any>(`/departments/${effectiveDepartmentId}?month=${month}&year=${year}`).then((d:any)=>d.policy) : api.get<any>('/calendar/me/settings'), enabled: Boolean(user) });
+  const { data: summary } = useQuery({ queryKey: ['calendar', 'summary', month, year, effectiveDepartmentId, resolvedEmployeeDepartmentId], queryFn: () => !canManage && resolvedEmployeeDepartmentId ? api.get<any>(`/calendar/me/summary?month=${month}&year=${year}`) : api.get<any>(`/calendar/summary?month=${month}&year=${year}${effectiveDepartmentId?`&departmentId=${effectiveDepartmentId}`:''}`), enabled: Boolean(user) });
   const { data: holidays } = useQuery({ queryKey: ['calendar', 'holidays', year], queryFn: () => api.get<any[]>(`/calendar/holidays?year=${year}`) });
   const addHoliday = useMutation({
     mutationFn: () => api.post('/calendar/holidays', { name, date, isOptional: optional === 'true' }),
@@ -73,7 +76,7 @@ export default function CalendarPage() {
         <div className="grid gap-4 lg:grid-cols-3">
           <Card><CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /> Working days</CardTitle></CardHeader><CardContent><p className="text-3xl font-semibold">{summary?.workingDays ?? '-'}</p><p className="text-xs text-muted-foreground">{monthName(month)} {year} · {effectiveDepartmentId ? 'department working days' : 'organization default'}</p></CardContent></Card>
           <Card><CardHeader><CardTitle>Company hours</CardTitle></CardHeader><CardContent><p className="text-2xl font-semibold">{hours}</p><p className="text-xs text-muted-foreground">Lunch {settings ? `${minutesToTime(settings.lunchStartMinutes)} – ${minutesToTime(settings.lunchEndMinutes)}` : '-'} · Attendance call {settings?.attendanceCallStartMinutes != null ? `${minutesToTime(settings.attendanceCallStartMinutes)} – ${minutesToTime(settings.attendanceCallEndMinutes)}` : 'Configured by department'}</p></CardContent></Card>
-          <Card><CardHeader><CardTitle>Saturday policy</CardTitle></CardHeader><CardContent><p className="text-lg font-semibold">{settings?.saturdayWorkPattern === 'FIRST_THIRD_WORKING' ? '1st & 3rd Saturday working' : settings?.saturdayWorkPattern?.replaceAll('_', ' ') ?? '-'}</p><p className="text-xs text-muted-foreground">{effectiveDepartmentId ? 'Employee calendar follows the selected department policy.' : 'No department assigned; organization default applies.'}</p></CardContent></Card>
+          <Card><CardHeader><CardTitle>Saturday policy</CardTitle></CardHeader><CardContent><p className="text-lg font-semibold">{settings?.saturdayWorkPattern === 'FIRST_THIRD_WORKING' ? '1st & 3rd Saturday working' : settings?.saturdayWorkPattern?.replaceAll('_', ' ') ?? '-'}</p><p className="text-xs text-muted-foreground">{effectiveDepartmentId ? `Calendar follows ${effectiveDepartmentName ?? 'the selected department'} policy.` : 'No department assigned; organization default applies.'}</p></CardContent></Card>
         </div>
 
         {canManage && settings && !effectiveDepartmentId && <Card>

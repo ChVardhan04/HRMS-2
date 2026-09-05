@@ -23,8 +23,21 @@ export class EmployeesService {
     private notifications: NotificationsService,
   ) {}
 
-  private generateEmployeeCode() {
-    return `EMP-${crypto.randomInt(100000, 999999)}`;
+  /**
+   * employeeCode is @unique. A bare random 6-digit suffix collides often enough
+   * to matter (~1% at 130 employees, ~50% at ~1000), which surfaced as a raw
+   * P2002 500 during employee creation. Retry against the database instead.
+   */
+  private async generateEmployeeCode(tx: any = this.prisma): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const code = `EMP-${crypto.randomInt(100000, 999999)}`;
+      const clash = await tx.employee.findUnique({
+        where: { employeeCode: code },
+        select: { id: true },
+      });
+      if (!clash) return code;
+    }
+    return `EMP-${Date.now().toString(36).toUpperCase()}${crypto.randomInt(100, 999)}`;
   }
 
   async create(dto: CreateEmployeeDto) {
@@ -58,7 +71,7 @@ export class EmployeesService {
     );
     if (invalidRole) {
       throw new ForbiddenException(
-        "HR can create employee, manager, or hiring-manager accounts only",
+        "HR can create employee or manager accounts only",
       );
     }
 
@@ -93,7 +106,7 @@ export class EmployeesService {
 
       return tx.employee.create({
         data: {
-          employeeCode: this.generateEmployeeCode(),
+          employeeCode: await this.generateEmployeeCode(tx),
           userId: user.id,
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
@@ -368,12 +381,30 @@ export class EmployeesService {
   ) {
     const employee = await this.findOne(id, user);
     const targetDepartmentId = dto.departmentId ?? employee.departmentId;
-    if (dto.designationId || dto.departmentId) {
-      const designationId = dto.designationId ?? employee.designationId;
-      if (designationId) {
-        const designation = await this.prisma.designation.findFirst({ where: { id: designationId, deletedAt: null } });
-        if (!designation) throw new BadRequestException("Selected designation does not exist");
-        if (targetDepartmentId && designation.departmentId !== targetDepartmentId) throw new BadRequestException("Selected designation does not belong to the selected department");
+    const departmentChanged =
+      dto.departmentId !== undefined &&
+      dto.departmentId !== employee.departmentId;
+    const designationId =
+      dto.designationId !== undefined
+        ? dto.designationId
+        : departmentChanged
+          ? undefined
+          : employee.designationId ?? undefined;
+
+    if (designationId) {
+      const designation = await this.prisma.designation.findFirst({
+        where: { id: designationId, deletedAt: null },
+      });
+      if (!designation) {
+        throw new BadRequestException("Selected designation does not exist");
+      }
+      if (
+        targetDepartmentId &&
+        designation.departmentId !== targetDepartmentId
+      ) {
+        throw new BadRequestException(
+          "Selected designation does not belong to the selected department",
+        );
       }
     }
     const isHr =
@@ -400,7 +431,12 @@ export class EmployeesService {
         employmentType: dto.employmentType,
         employmentStatus: dto.employmentStatus,
         departmentId: dto.departmentId,
-        designationId: dto.designationId,
+        designationId:
+          dto.designationId !== undefined
+            ? dto.designationId
+            : departmentChanged
+              ? null
+              : undefined,
         managerId: dto.managerId,
         skipLevelManagerId: dto.skipLevelManagerId,
         location: dto.location,

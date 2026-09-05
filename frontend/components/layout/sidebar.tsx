@@ -24,6 +24,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/leave', label: 'Leave', icon: CalendarDays },
   { href: '/employees', label: 'Employees', icon: Users, roles: ['HR_ADMIN', 'MANAGER', 'SUPER_ADMIN'] },
   { href: '/departments', label: 'Departments', icon: Building2, roles: ['HR_ADMIN', 'SUPER_ADMIN'] },
+  { href: '/designations', label: 'Designations', icon: BriefcaseBusiness, roles: ['HR_ADMIN', 'SUPER_ADMIN'] },
   { href: '/calendar', label: 'Company Calendar', icon: CalendarDays },
   { href: '/policies', label: 'Policies', icon: FileText },
   { href: '/documents', label: 'Documents', icon: FolderLock },

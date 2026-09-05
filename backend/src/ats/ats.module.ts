@@ -11,11 +11,12 @@ import {
 } from "./interviews/interviews.controller";
 import { WebhooksController } from "./webhooks.controller";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { AuthModule } from "../auth/auth.module";
 import { AtsScreeningService } from "./screening.service";
 import { AtsScreeningController } from "./screening.controller";
 
 @Module({
-  imports: [NotificationsModule],
+  imports: [NotificationsModule, AuthModule],
   providers: [
     JobsService,
     CandidatesService,

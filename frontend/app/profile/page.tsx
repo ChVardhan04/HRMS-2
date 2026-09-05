@@ -17,7 +17,7 @@ export default function ProfilePage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: me, isLoading } = useQuery({ queryKey: ['users', 'me'], queryFn: () => api.get<any>('/users/me') });
-  const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', personalEmail: '', location: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', personalEmail: '', location: '', dateOfBirth: '' });
 
   useEffect(() => {
     if (!me?.employee) return;
@@ -27,6 +27,7 @@ export default function ProfilePage() {
       phone: me.employee.phone ?? '',
       personalEmail: me.employee.personalEmail ?? '',
       location: me.employee.location ?? '',
+      dateOfBirth: me.employee.dateOfBirth ? String(me.employee.dateOfBirth).slice(0, 10) : '',
     });
   }, [me]);
 
@@ -55,6 +56,7 @@ export default function ProfilePage() {
                 <div className="flex flex-col gap-1.5"><Label>Personal email</Label><Input type="email" value={form.personalEmail} onChange={(e) => setForm({ ...form, personalEmail: e.target.value })} /></div>
                 <div className="flex flex-col gap-1.5"><Label>Phone</Label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
                 <div className="flex flex-col gap-1.5"><Label>Location</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
+                <div className="flex flex-col gap-1.5"><Label>Date of Birth</Label><Input type="date" value={form.dateOfBirth} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} /></div>
                 <div className="sm:col-span-2"><Button type="submit" disabled={update.isPending}>{update.isPending ? 'Saving...' : 'Save changes'}</Button></div>
               </form>
             </CardContent>

@@ -40,6 +40,7 @@ export default function EmployeeProfilePage() {
       firstName: employee.firstName ?? '',
       lastName: employee.lastName ?? '',
       phone: employee.phone ?? '',
+      dateOfBirth: employee.dateOfBirth ? new Date(employee.dateOfBirth).toISOString().slice(0, 10) : '',
       dateOfJoining: employee.dateOfJoining ? new Date(employee.dateOfJoining).toISOString().slice(0, 10) : '',
       employmentType: employee.employmentType ?? 'FULL_TIME',
       employmentStatus: employee.employmentStatus ?? 'PROBATION',
@@ -84,6 +85,7 @@ export default function EmployeeProfilePage() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card><CardHeader><CardTitle>Employment details</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-4 text-sm">
+            <div><p className="text-xs text-muted-foreground">Date of birth</p><p>{employee.dateOfBirth ? formatDate(employee.dateOfBirth) : '-'}</p></div>
             <div><p className="text-xs text-muted-foreground">Joining date</p><p>{formatDate(employee.dateOfJoining)}</p></div>
             <div><p className="text-xs text-muted-foreground">Employment type</p><p>{String(employee.employmentType).replace('_', ' ')}</p></div>
             <div><p className="text-xs text-muted-foreground">Employment status</p><p>{String(employee.employmentStatus).replace('_', ' ')}</p></div>
@@ -102,10 +104,11 @@ export default function EmployeeProfilePage() {
 
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Edit employee</DialogTitle><DialogDescription>HR/Admin can update the employee master. Employment type and lifecycle status are stored on the employee record and drive downstream HRMS workflows.</DialogDescription></DialogHeader>
-            <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); updateEmployee.mutate({ ...form, skipLevelManagerId: form.skipLevelManagerId || undefined, monthlySalary: form.monthlySalary === '' ? undefined : Number(form.monthlySalary), managerId: form.managerId || undefined, departmentId: form.departmentId || undefined, designationId: form.designationId || undefined, phone: form.phone || undefined, location: form.location || undefined }, { onSuccess: () => setOpen(false) }); }}>
+            <form className="grid gap-4 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); updateEmployee.mutate({ ...form, skipLevelManagerId: form.skipLevelManagerId || undefined, monthlySalary: form.monthlySalary === '' ? undefined : Number(form.monthlySalary), dateOfBirth: form.dateOfBirth || undefined, managerId: form.managerId || undefined, departmentId: form.departmentId || undefined, designationId: form.designationId || undefined, phone: form.phone || undefined, location: form.location || undefined }, { onSuccess: () => setOpen(false) }); }}>
               <div><Label>First name</Label><Input value={form.firstName} onChange={(e) => update('firstName', e.target.value)} required /></div>
               <div><Label>Last name</Label><Input value={form.lastName} onChange={(e) => update('lastName', e.target.value)} required /></div>
               <div><Label>Phone</Label><Input value={form.phone} onChange={(e) => update('phone', e.target.value)} /></div>
+              <div><Label>Date of birth</Label><Input type="date" value={form.dateOfBirth ?? ''} onChange={(e) => update('dateOfBirth', e.target.value)} /></div>
               <div><Label>Date of joining</Label><Input type="date" value={form.dateOfJoining} onChange={(e) => update('dateOfJoining', e.target.value)} required /></div>
               <div><Label>Employment type</Label><Select value={form.employmentType} onValueChange={(v) => update('employmentType', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[['FULL_TIME','Full time'],['PART_TIME','Part time'],['CONTRACT','Contract'],['INTERN','Intern']].map(([v,l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select></div>
               <div><Label>Employment status</Label><Select value={form.employmentStatus} onValueChange={(v) => update('employmentStatus', v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[['PROBATION','Probation'],['CONFIRMED','Confirmed'],['NOTICE_PERIOD','Notice period'],['EXITED','Exited']].map(([v,l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select></div>

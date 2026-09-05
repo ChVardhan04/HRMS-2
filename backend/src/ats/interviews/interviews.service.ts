@@ -15,13 +15,32 @@ import {
 } from "./dto/interview.dto";
 import * as crypto from "crypto";
 import * as bcrypt from "bcrypt";
+import { AuthService } from "../../auth/auth.service";
 
 @Injectable()
 export class InterviewsService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private auth: AuthService,
   ) {}
+
+  /**
+   * Employee codes are @unique. A bare random 6-digit suffix collides often
+   * enough to matter (~1% at 130 employees, ~50% at ~1000), so we check for
+   * an existing row and retry, then fall back to a wider random space.
+   */
+  private async nextEmployeeCode(tx: any = this.prisma): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const code = `EMP-${crypto.randomInt(100000, 999999)}`;
+      const clash = await tx.employee.findUnique({
+        where: { employeeCode: code },
+        select: { id: true },
+      });
+      if (!clash) return code;
+    }
+    return `EMP-${Date.now().toString(36).toUpperCase()}${crypto.randomInt(100, 999)}`;
+  }
 
   async schedule(dto: ScheduleInterviewDto) {
     const candidate = await this.prisma.candidate.findUnique({
@@ -182,39 +201,81 @@ export class InterviewsService {
     });
   }
 
+  /**
+   * HR is the only approval authority for offers. Approving moves the offer to
+   * PENDING_APPROVAL so `sendOffer` has an explicit, auditable gate to check.
+   */
   async approveOfferHr(offerId: string, hrApprovedById: string) {
-    return this.prisma.offer.update({
-      where: { id: offerId },
-      data: { hrApprovedById },
-    });
-  }
-
-  async approveOfferFinance(offerId: string, financeApprovedById: string) {
-    const offer = await this.prisma.offer.update({
-      where: { id: offerId },
-      data: { financeApprovedById, status: "PENDING_APPROVAL" },
-    });
-    return offer;
-  }
-
-  async sendOffer(offerId: string) {
     const offer = await this.prisma.offer.findUnique({
       where: { id: offerId },
     });
     if (!offer) throw new NotFoundException("Offer not found");
-    if (!offer.hrApprovedById || !offer.financeApprovedById) {
-      throw new NotFoundException(
-        "Offer requires both HR and Finance sign-off before sending",
+    if (offer.status === "ACCEPTED" || offer.status === "DECLINED") {
+      throw new BadRequestException(
+        "This offer has already been responded to and can no longer be approved",
       );
     }
+    if (offer.hrApprovedById) {
+      throw new BadRequestException("This offer has already been approved");
+    }
+    return this.prisma.offer.update({
+      where: { id: offerId },
+      data: { hrApprovedById, status: "PENDING_APPROVAL" },
+    });
+  }
+
+  /**
+   * Sends the approved offer to the candidate. HR sign-off is the only
+   * prerequisite. The candidate receives the portal link containing the
+   * single-use portalToken, which is the only way to reach the public
+   * respond endpoint.
+   */
+  async sendOffer(offerId: string) {
+    const offer = await this.prisma.offer.findUnique({
+      where: { id: offerId },
+      include: { candidate: true },
+    });
+    if (!offer) throw new NotFoundException("Offer not found");
+    if (!offer.hrApprovedById) {
+      throw new BadRequestException(
+        "Offer requires HR approval before it can be sent",
+      );
+    }
+    if (offer.status === "SENT") {
+      throw new BadRequestException("This offer has already been sent");
+    }
+    if (offer.status === "ACCEPTED" || offer.status === "DECLINED") {
+      throw new BadRequestException(
+        "This offer has already been responded to and cannot be resent",
+      );
+    }
+
     await this.prisma.candidate.update({
       where: { id: offer.candidateId },
       data: { currentStage: CandidateStage.OFFER },
     });
-    return this.prisma.offer.update({
+
+    const sent = await this.prisma.offer.update({
       where: { id: offerId },
       data: { status: "SENT", sentAt: new Date() },
     });
+
+    const baseUrl = (
+      process.env.APP_URL ??
+      process.env.FRONTEND_URL ??
+      "http://localhost:3000"
+    ).replace(/\/$/, "");
+    const portalUrl = `${baseUrl}/offer/${encodeURIComponent(offer.portalToken)}`;
+    const joining = new Date(offer.joiningDate).toDateString();
+
+    await this.notifications.sendEmail({
+      to: offer.candidate.email,
+      subject: `Your offer for ${offer.designationTitle}`,
+      body: `Congratulations! Your offer for ${offer.designationTitle} is ready. Proposed joining date: ${joining}. Review and respond here: ${portalUrl}`,
+      html: `<p>Congratulations!</p><p>Your offer for <strong>${offer.designationTitle}</strong> is ready. Proposed joining date: ${joining}.</p><p><a href="${portalUrl}">Review and respond to your offer</a></p>`,
+    });
+
+    return sent;
   }
 
   /** Candidate accepts via portal link -> auto-creates the Employee record and triggers onboarding checklist (plan 7.5). */
@@ -257,8 +318,13 @@ export class InterviewsService {
         where: { email: offer.candidate.email },
       });
       if (!existingUser && role) {
-        const temporaryPassword = crypto.randomBytes(9).toString("base64url");
-        const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+        // The account is created inactive-until-activated. Login rejects any user
+        // with mustChangePassword = true, so the account MUST be handed over via
+        // the activation-link flow rather than a plaintext temporary password.
+        const placeholderHash = await bcrypt.hash(
+          crypto.randomBytes(32).toString("hex"),
+          Number(process.env.BCRYPT_SALT_ROUNDS ?? 12),
+        );
         const requisition =
           offer.candidate.applications[0]?.jobPosting?.requisition;
         const department = requisition?.departmentName
@@ -266,18 +332,19 @@ export class InterviewsService {
               where: { name: requisition.departmentName },
             })
           : null;
-        await this.prisma.$transaction(async (tx) => {
+
+        const createdUser = await this.prisma.$transaction(async (tx) => {
           const user = await tx.user.create({
             data: {
               email: offer.candidate.email,
-              passwordHash,
+              passwordHash: placeholderHash,
               mustChangePassword: true,
               roles: { create: [{ roleId: role.id }] },
             },
           });
           await tx.employee.create({
             data: {
-              employeeCode: `EMP-${crypto.randomInt(100000, 999999)}`,
+              employeeCode: await this.nextEmployeeCode(tx),
               userId: user.id,
               firstName: offer.candidate.firstName,
               lastName: offer.candidate.lastName,
@@ -288,12 +355,10 @@ export class InterviewsService {
               departmentId: department?.id,
             },
           });
+          return user;
         });
-        await this.notifications.sendEmail({
-          to: offer.candidate.email,
-          subject: "Your employee portal access",
-          body: `Your HRMS account has been created. Temporary password: ${temporaryPassword}. Please sign in and change it immediately.`,
-        });
+
+        await this.auth.sendActivationLink(createdUser.id);
       }
     }
 

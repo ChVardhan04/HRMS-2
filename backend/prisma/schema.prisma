@@ -476,6 +476,7 @@ model Employee {
   groupsOwned       CommunicationGroup[]
   groupChecks       GroupCheckLog[]
   groupMemberships  GroupMember[]
+  birthdayNotificationLogs BirthdayNotificationLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1075,6 +1076,8 @@ model KRAItem {
   targetText   String?
   unit         String?
   isAutomated  Boolean     @default(false)
+  evidenceSource String     @default("HRMS_ACTIVITY")
+  evaluationMethod String   @default("AI_EVIDENCE")
   sortOrder    Int         @default(0)
 }
 
@@ -1133,6 +1136,17 @@ model Strike {
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------
+
+model BirthdayNotificationLog {
+  id           String   @id @default(uuid())
+  employeeId   String
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  year         Int
+  notifiedAt   DateTime @default(now())
+
+  @@unique([employeeId, year])
+  @@index([year])
+}
 
 model Notification {
   id        String              @id @default(uuid())

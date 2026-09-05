@@ -27,6 +27,7 @@ export class UsersService {
             phone: true,
             personalEmail: true,
             location: true,
+            dateOfBirth: true,
             dateOfJoining: true,
             employmentType: true,
             employmentStatus: true,
@@ -44,6 +45,7 @@ export class UsersService {
       phone?: string;
       personalEmail?: string;
       location?: string;
+      dateOfBirth?: string;
     },
   ) {
     const user = await this.prisma.user.findUnique({
@@ -61,6 +63,7 @@ export class UsersService {
         phone: data.phone,
         personalEmail: data.personalEmail,
         location: data.location,
+        dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
       },
     });
 

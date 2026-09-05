@@ -3,7 +3,7 @@ import { RoleName } from "@prisma/client";
 import { Roles } from "../common/decorators/roles.decorator";
 import { CurrentUser, AuthenticatedUser } from "../common/decorators/current-user.decorator";
 import { KraService } from "./kra.service";
-import { CreateKraTemplateDto, KraItemDto, GenerateKraMetricsDto, ConfigureKraTemplateDto } from "./dto/kra.dto";
+import { CreateKraTemplateDto, KraItemDto, GenerateKraMetricsDto, ConfigureKraTemplateDto, DeleteKraItemDto } from "./dto/kra.dto";
 
 @Controller("kra")
 export class KraController {
@@ -54,7 +54,11 @@ export class KraController {
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Patch("items/:id") updateItem(@Param("id") id: string, @Body() dto: Partial<KraItemDto>) { return this.kraService.updateItem(id, dto); }
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
-  @Delete("items/:id") deleteItem(@Param("id") id: string) { return this.kraService.deleteItem(id); }
+  @Delete("items/:id") deleteItem(@Param("id") id: string, @Body() dto: DeleteKraItemDto) { return this.kraService.deleteItem(id, dto?.redistribute); }
+
+  /** Lets HR see whether a template's weights total 100% before relying on its scores. */
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Get("templates/:id/weight-summary") weightSummary(@Param("id") id: string) { return this.kraService.templateWeightSummary(id); }
 
   @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Post("employee/:employeeId/manual-score")

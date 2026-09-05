@@ -1,8 +1,11 @@
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsInt,
+  IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   IsUUID,
   Max,
@@ -49,6 +52,9 @@ export class CreateOfferDto {
   @IsUUID()
   candidateId: string;
 
+  // Previously unvalidated: any JSON value reached the Decimal column.
+  @IsNumber()
+  @IsPositive()
   ctcOffered: number;
 
   @IsString()
@@ -56,4 +62,14 @@ export class CreateOfferDto {
 
   @IsDateString()
   joiningDate: string;
+}
+
+/**
+ * The offer-response body must be a real boolean. Reading it with
+ * @Body("accepted") bypassed the global ValidationPipe entirely, so the
+ * string "false" arrived truthy and a decline was recorded as an ACCEPTANCE.
+ */
+export class OfferResponseDto {
+  @IsBoolean()
+  accepted: boolean;
 }

@@ -12,6 +12,7 @@ import { RoleName } from "@prisma/client";
 import { Roles } from "../common/decorators/roles.decorator";
 import { CalendarService } from "./calendar.service";
 import { CalendarSettingsDto, HolidayDto } from "./dto/calendar.dto";
+import { CurrentUser, AuthenticatedUser } from "../common/decorators/current-user.decorator";
 
 @Controller("calendar")
 export class CalendarController {
@@ -20,6 +21,26 @@ export class CalendarController {
   @Get("settings")
   settings() {
     return this.calendarService.settings();
+  }
+
+  @Get("me/settings")
+  mySettings(@CurrentUser() user: AuthenticatedUser) {
+    if (!user.employeeId) return this.calendarService.settings();
+    return this.calendarService.settingsForEmployee(user.employeeId);
+  }
+
+  @Get("me/summary")
+  mySummary(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query("month") month: string,
+    @Query("year") year: string,
+  ) {
+    if (!user.employeeId) {
+      const now = new Date();
+      return this.calendarService.workingDaySummary(Number(month) || now.getMonth() + 1, Number(year) || now.getFullYear());
+    }
+    const now = new Date();
+    return this.calendarService.workingDaySummaryForEmployee(user.employeeId, Number(month) || now.getMonth() + 1, Number(year) || now.getFullYear());
   }
 
   @Get("holidays")

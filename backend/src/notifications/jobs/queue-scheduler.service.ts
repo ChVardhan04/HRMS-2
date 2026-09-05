@@ -23,17 +23,28 @@ export class QueueSchedulerService implements OnModuleInit {
       select: { timezone: true },
     });
     const timezone = organization?.timezone ?? "Asia/Kolkata";
+
+    // IMPORTANT: every pattern below is evaluated by BullMQ in `timezone`
+    // (the organization's local time), because `tz` is passed in the repeat
+    // options. They must therefore be written as LOCAL times.
+    //
+    // These previously contained UTC-shifted values *and* the tz option, so
+    // every job was double-converted and fired at the wrong local time — e.g.
+    // "30 18 * * *" was commented "00:00 IST" but actually ran at 18:30 IST.
     const schedules: Array<{ name: JobName; cron: string }> = [
       { name: JobName.DPR_REMINDER_SWEEP, cron: "*/15 * * * *" }, // service checks organization-local reminder windows
       { name: JobName.DPR_ESCALATION_SWEEP, cron: "*/15 * * * *" }, // service checks organization-local SLA + 30 minutes
-      { name: JobName.STALE_CANDIDATE_SWEEP, cron: "30 3 * * *" }, // 09:00 organization-local time
-      { name: JobName.GROUP_CHECK_REMINDER_SWEEP, cron: "30 4 * * *" }, // 10:00 organization-local time
-      { name: JobName.KRA_DAILY_CALC, cron: "30 18 * * *" }, // daily projected KRA calculation at 00:00 IST when timezone is Asia/Kolkata
-      { name: JobName.KRA_PRECALC, cron: "0 5 25 * *" }, // 25th, 10:30 organization-local time
-      { name: JobName.KRA_FINALIZE, cron: "30 18 * * *" }, // handler finalizes only on each employee's department-specific last working day
-      { name: JobName.LEAVE_ACCRUAL, cron: "0 0 1 * *" }, // 1st of month, organization-local time
-      { name: JobName.STRIKE_EVALUATION, cron: "30 0 1 * *" }, // 1st of month, organization-local time
+      { name: JobName.STALE_CANDIDATE_SWEEP, cron: "0 9 * * *" }, // 09:00 local
+      { name: JobName.GROUP_CHECK_REMINDER_SWEEP, cron: "0 10 * * *" }, // 10:00 local
+      { name: JobName.KRA_DAILY_CALC, cron: "0 23 * * *" }, // 23:00 local, after the working day has closed
+      { name: JobName.KRA_PRECALC, cron: "30 10 25 * *" }, // 25th, 10:30 local
+      // Runs AFTER the daily calculation so month-end finalization is never
+      // overwritten by a later projection sweep on the same evening.
+      { name: JobName.KRA_FINALIZE, cron: "45 23 * * *" }, // 23:45 local; handler finalizes only on each employee's last working day
+      { name: JobName.LEAVE_ACCRUAL, cron: "0 1 1 * *" }, // 1st of month, 01:00 local
+      { name: JobName.STRIKE_EVALUATION, cron: "30 1 1 * *" }, // 1st of month, 01:30 local
       { name: JobName.AUTO_ABSENT_SWEEP, cron: "*/15 * * * *" }, // service checks the organization-configured local cutoff
+      { name: JobName.BIRTHDAY_SWEEP, cron: "30 8 * * *" }, // 08:30 local
     ];
 
     for (const schedule of schedules) {

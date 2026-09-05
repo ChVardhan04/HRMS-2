@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { StrikeStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -10,6 +10,8 @@ const STRIKES_TO_ESCALATE = 3;
 
 @Injectable()
 export class StrikesService {
+  private readonly logger = new Logger(StrikesService.name);
+
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
@@ -32,7 +34,21 @@ export class StrikesService {
     };
   }
 
-  /** Called after a KRA score is finalized for the month — plan section 23. */
+  /**
+   * Called after a KRA score is finalized for the month — plan section 23.
+   *
+   * A strike is a serious employment action, so it is issued ONLY when the score
+   * that triggered it can actually be trusted. Three guards, all of which used to
+   * be missing:
+   *
+   *   1. the score must be FINAL (a mid-month projection must never strike)
+   *   2. the template must be properly configured (metrics exist, weights = 100)
+   *   3. the AI must have genuinely evaluated the metrics
+   *
+   * Without these, a template with no metrics, unbalanced weights, or an
+   * unreachable AI provider produced a 0%–60% score that was indistinguishable
+   * from real non-performance, and every affected employee was struck.
+   */
   async evaluateForScore(kraScoreId: string) {
     const score = await this.prisma.kRAScore.findUnique({
       where: { id: kraScoreId },
@@ -43,6 +59,33 @@ export class StrikesService {
       },
     });
     if (!score) return null;
+
+    if (!score.isFinal) {
+      this.logger.warn(
+        `Skipping strike evaluation for KRA score ${kraScoreId}: score is not final.`,
+      );
+      return null;
+    }
+
+    const meta = (score.breakdown as any)?.__meta ?? null;
+
+    if (!meta) {
+      this.logger.warn(
+        `Skipping strike evaluation for KRA score ${kraScoreId}: score has no calculation metadata (calculated by an older version). Recalculate before striking.`,
+      );
+      return null;
+    }
+
+    if (!meta.eligibleForStrike) {
+      this.logger.warn(
+        `Skipping strike for employee ${score.employeeId} (${score.periodMonth}/${score.periodYear}): ` +
+          `metricCount=${meta.metricCount}, totalWeight=${meta.totalWeight}, ` +
+          `weightsBalanced=${meta.weightsBalanced}, aiEvaluated=${meta.aiEvaluated}. ` +
+          `The score is not trustworthy enough to justify a strike.`,
+      );
+      await this.notifyHrOfUnscoreableEmployee(score, meta);
+      return null;
+    }
 
     const config = await this.getConfig();
     if (Number(score.finalScore) >= config.thresholdScore) return null;
@@ -78,6 +121,37 @@ export class StrikesService {
     return strike;
   }
 
+  /**
+   * When an employee cannot be reliably scored we tell HR rather than failing
+   * silently — an unconfigured template is an HR problem, not the employee's.
+   */
+  private async notifyHrOfUnscoreableEmployee(score: any, meta: any) {
+    const reason = !meta.metricCount
+      ? "their KRA template has no metrics configured"
+      : !meta.weightsBalanced
+        ? `their KRA template weights total ${meta.totalWeight}% instead of 100%`
+        : "the AI evaluation was unavailable, so the score used the fallback calculation";
+
+    const hrUsers = await this.prisma.user.findMany({
+      where: {
+        roles: { some: { role: { name: { in: ["HR_ADMIN", "SUPER_ADMIN"] } } } },
+        isActive: true,
+      },
+      select: { id: true, email: true },
+    });
+
+    for (const hrUser of hrUsers) {
+      await this.notifications.notify({
+        userId: hrUser.id,
+        title: "KRA score could not be trusted — no strike issued",
+        body: `${score.employee.firstName} ${score.employee.lastName} scored ${score.finalScore}% for ${score.periodMonth}/${score.periodYear}, but no strike was issued because ${reason}. Fix the configuration and recalculate.`,
+        category: NotificationCategory.KRA,
+        emailAlso: true,
+        recipientEmail: hrUser.email,
+      });
+    }
+  }
+
   private async activeStrikeCount(employeeId: string) {
     const config = await this.getConfig();
     const cutoff = new Date();
@@ -96,6 +170,19 @@ export class StrikesService {
     const count = await this.activeStrikeCount(employeeId);
     if (count < config.strikesToEscalate) return { escalated: false, count };
 
+    // Escalate once per distinct strike count, not on every evaluation. Without
+    // this, an employee sitting at 3+ strikes re-notified their manager and every
+    // HR user every single month.
+    const alreadyEscalated = await this.prisma.notification.findFirst({
+      where: {
+        category: NotificationCategory.STRIKE,
+        title: "Three-strike escalation",
+        body: { contains: `[esc:${employeeId}:${count}]` },
+      },
+      select: { id: true },
+    });
+    if (alreadyEscalated) return { escalated: false, count, alreadyNotified: true };
+
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
       include: { user: true, manager: { include: { user: true } } },
@@ -113,7 +200,7 @@ export class StrikesService {
       await this.notifications.notify({
         userId: employee.manager.userId!,
         title: "Three-strike escalation",
-        body: `${employee.firstName} ${employee.lastName} has reached ${count} strikes within the rolling ${config.rollingWindowMonths}-month window.`,
+        body: `${employee.firstName} ${employee.lastName} has reached ${count} strikes within the rolling ${config.rollingWindowMonths}-month window. [esc:${employeeId}:${count}]`,
         category: NotificationCategory.STRIKE,
         emailAlso: true,
         recipientEmail: employee.manager.user.email,
@@ -124,7 +211,7 @@ export class StrikesService {
       await this.notifications.notify({
         userId: hrUser.id,
         title: "Three-strike escalation",
-        body: `${employee.firstName} ${employee.lastName} has reached ${count} strikes. Consider a PIP.`,
+        body: `${employee.firstName} ${employee.lastName} has reached ${count} strikes. Consider a PIP. [esc:${employeeId}:${count}]`,
         category: NotificationCategory.STRIKE,
         emailAlso: true,
         recipientEmail: hrUser.email,
@@ -215,6 +302,13 @@ export class StrikesService {
   }
 
   async resolve(strikeId: string) {
+    const existing = await this.prisma.strike.findUnique({
+      where: { id: strikeId },
+    });
+    if (!existing) throw new NotFoundException("Strike not found");
+    if (existing.status !== StrikeStatus.ACTIVE) {
+      throw new ForbiddenException("Only active strikes can be resolved");
+    }
     return this.prisma.strike.update({
       where: { id: strikeId },
       data: { status: StrikeStatus.RESOLVED },

@@ -5,6 +5,7 @@ import { NotificationsController } from "./notifications.controller";
 import { SCHEDULED_JOBS_QUEUE } from "./jobs/queue.constants";
 import { ScheduledJobsProcessor } from "./jobs/scheduled-jobs.processor";
 import { QueueSchedulerService } from "./jobs/queue-scheduler.service";
+import { BirthdaySchedulerService } from "./jobs/birthday-scheduler.service";
 
 @Module({
   imports: [BullModule.registerQueue({ name: SCHEDULED_JOBS_QUEUE })],
@@ -13,6 +14,7 @@ import { QueueSchedulerService } from "./jobs/queue-scheduler.service";
     NotificationsService,
     ScheduledJobsProcessor,
     QueueSchedulerService,
+    BirthdaySchedulerService,
   ],
   exports: [NotificationsService],
 })

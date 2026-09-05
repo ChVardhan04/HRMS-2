@@ -4,7 +4,7 @@ import {
   AuthenticatedUser,
 } from "../common/decorators/current-user.decorator";
 import { UsersService } from "./users.service";
-import { IsEmail, IsOptional, IsString } from "class-validator";
+import { IsDateString, IsEmail, IsOptional, IsString } from "class-validator";
 
 class UpdateMyProfileDto {
   @IsOptional() @IsString() firstName?: string;
@@ -12,6 +12,7 @@ class UpdateMyProfileDto {
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsEmail() personalEmail?: string;
   @IsOptional() @IsString() location?: string;
+  @IsOptional() @IsDateString() dateOfBirth?: string;
 }
 
 @Controller("users")

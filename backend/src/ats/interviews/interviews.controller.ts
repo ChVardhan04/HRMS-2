@@ -9,6 +9,7 @@ import {
 import { InterviewsService } from "./interviews.service";
 import {
   CreateOfferDto,
+  OfferResponseDto,
   ScheduleInterviewDto,
   SubmitScorecardDto,
 } from "./dto/interview.dto";
@@ -49,6 +50,9 @@ export class OffersController {
     return this.interviewsService.createOffer(dto);
   }
 
+  /**
+   * HR is the sole approval authority for offers. There is no Finance step.
+   */
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Patch(":id/hr-approve")
   hrApprove(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
@@ -61,9 +65,17 @@ export class OffersController {
     return this.interviewsService.sendOffer(id);
   }
 
+  /**
+   * Public candidate offer portal. The :portalToken path segment is the
+   * 32-byte random Offer.portalToken emailed to the candidate — NOT the
+   * offer's database id. It is the capability that authorises this call.
+   */
   @Public()
-  @Patch(":id/respond")
-  respond(@Param("id") id: string, @Body("accepted") accepted: boolean) {
-    return this.interviewsService.recordOfferResponse(id, accepted);
+  @Patch(":portalToken/respond")
+  respond(
+    @Param("portalToken") portalToken: string,
+    @Body() dto: OfferResponseDto,
+  ) {
+    return this.interviewsService.recordOfferResponse(portalToken, dto.accepted);
   }
 }

@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next';
-import Script from 'next/script';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { QueryProvider } from '@/lib/query-provider';
@@ -34,24 +33,6 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <body className="min-h-screen font-sans">
-
-
-        <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-DDC6BHJ5HF"
-          strategy="afterInteractive"
-        />
-        
-        <Script id="google-analytics" strategy="afterInteractive">
-          {`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){window.dataLayer.push(arguments);}
-            gtag('js', new Date());
-        
-            gtag('config', 'G-DDC6BHJ5HF');
-          `}
-        </Script>
-
-        
         <QueryProvider>
           {children}
           <Toaster />

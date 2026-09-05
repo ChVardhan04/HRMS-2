@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsNumber,
   IsString,
+  MinLength,
   IsUUID,
 } from "class-validator";
 import { EmploymentStatus, EmploymentType } from "@prisma/client";
@@ -58,7 +59,8 @@ export class CreateEmployeeDto {
   departmentId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MinLength(1)
   designationId?: string;
 
   @IsOptional()
@@ -140,7 +142,8 @@ export class UpdateEmployeeDto {
   departmentId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MinLength(1)
   designationId?: string;
 
   @IsOptional()

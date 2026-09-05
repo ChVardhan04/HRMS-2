@@ -7,5 +7,6 @@ export enum NotificationCategory {
   GROUP_CHECK = "GROUP_CHECK",
   KRA = "KRA",
   STRIKE = "STRIKE",
+  BIRTHDAY = "BIRTHDAY",
   GENERAL = "GENERAL",
 }

@@ -121,6 +121,14 @@ enum KraMeasurementType {
   AUTOMATED
 }
 
+enum KRACommitmentStatus {
+  ACTIVE
+  SUBMITTED
+  COMPLETED
+  PARTIAL
+  CANCELLED
+}
+
 enum JobStatus {
   DRAFT
   PENDING_APPROVAL
@@ -467,6 +475,7 @@ model Employee {
   createdTodos      Todo[]           @relation("TodoCreator")
   dprReviews        DPR[]            @relation("DprReviewer")
   kraScores         KRAScore[]
+  kraCommitments    KRACommitment[]
   strikes           Strike[]
   recruiterFor      Candidate[]      @relation("CandidateRecruiter")
   hiringManagerFor  Candidate[]      @relation("CandidateHiringManager")
@@ -1056,6 +1065,7 @@ model KRATemplate {
   items          KRAItem[]
   scores         KRAScore[]
   dailyScores    KRADailyScore[]
+  commitments   KRACommitment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1079,6 +1089,40 @@ model KRAItem {
   evidenceSource String     @default("HRMS_ACTIVITY")
   evaluationMethod String   @default("AI_EVIDENCE")
   sortOrder    Int         @default(0)
+  commitments  KRACommitment[]
+}
+
+model KRACommitment {
+  id                String              @id @default(uuid())
+  employeeId        String
+  employee          Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  templateId        String
+  template          KRATemplate          @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  metricId          String?
+  metric            KRAItem?             @relation(fields: [metricId], references: [id], onDelete: SetNull)
+  alignmentStatus   String              @default("UNMATCHED")
+  alignmentScore    Decimal             @default(0) @db.Decimal(5, 2)
+  alignmentReason   String?
+  alignmentCheckedAt DateTime?
+  periodMonth       Int
+  periodYear        Int
+  title             String
+  description       String?
+  targetValue      Decimal?            @db.Decimal(14, 2)
+  targetUnit        String?
+  dueDate           DateTime?
+  completionPercent Decimal             @default(0) @db.Decimal(5, 2)
+  status            KRACommitmentStatus @default(ACTIVE)
+  employeeNote      String?
+  evidence          String?
+  submittedAt      DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([employeeId, periodYear, periodMonth])
+  @@index([templateId, periodYear, periodMonth])
+  @@index([metricId])
+  @@index([alignmentStatus])
 }
 
 model KRADailyScore {

@@ -1,6 +1,6 @@
-import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
-import { KraMeasurementType } from "@prisma/client";
+import { KRACommitmentStatus, KraMeasurementType } from "@prisma/client";
 
 export class CreateKraTemplateDto {
   @IsString() name: string;
@@ -53,4 +53,26 @@ export class ConfigureKraTemplateDto {
   @IsUUID() designationId: string;
   @IsString() roleName: string;
   @IsString() roleProfile: string;
+}
+
+
+export class CreateKraCommitmentDto {
+  @IsString() title: string;
+  @IsOptional() @IsUUID() metricId?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsNumber() @Min(0) targetValue?: number;
+  @IsOptional() @IsString() targetUnit?: string;
+  @IsOptional() @IsDateString() dueDate?: string;
+}
+
+export class UpdateKraCommitmentDto {
+  @IsOptional() @IsString() title?: string;
+  @IsOptional() @IsUUID() metricId?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsNumber() @Min(0) targetValue?: number;
+  @IsOptional() @IsString() targetUnit?: string;
+  @IsOptional() @IsNumber() @Min(0) @Max(100) completionPercent?: number;
+  @IsOptional() @IsEnum(KRACommitmentStatus) status?: KRACommitmentStatus;
+  @IsOptional() @IsString() employeeNote?: string;
+  @IsOptional() @IsString() evidence?: string;
 }

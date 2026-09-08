@@ -11,6 +11,7 @@ import { LinkedInAdapter } from "./job-boards/linkedin.adapter";
 import { CsvImportAdapter } from "./job-boards/csv-import.adapter";
 import { IntegrationsService } from "./integrations.service";
 import { IntegrationsController } from "./integrations.controller";
+import { AiProviderService } from "./ai/ai-provider.service";
 
 @Global()
 @Module({
@@ -30,6 +31,7 @@ import { IntegrationsController } from "./integrations.controller";
     CsvImportAdapter,
     JobBoardRegistry,
     IntegrationsService,
+    AiProviderService,
   ],
   exports: [
     EMAIL_ADAPTER,
@@ -37,6 +39,7 @@ import { IntegrationsController } from "./integrations.controller";
     JobBoardRegistry,
     IntegrationsService,
     CsvImportAdapter,
+    AiProviderService,
   ],
 })
 export class IntegrationsModule {}

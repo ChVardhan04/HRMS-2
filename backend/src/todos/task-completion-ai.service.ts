@@ -1,12 +1,13 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { TodoEodStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
+import { AiProviderService } from "../integrations/ai/ai-provider.service";
 
 @Injectable()
 export class TaskCompletionAiService {
   private readonly logger = new Logger(TaskCompletionAiService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private readonly provider: AiProviderService) {}
 
   async analyzeAndPersistForWorkDay(workDayId: string, dprText: string) {
     const tasks = await this.prisma.todo.findMany({
@@ -30,59 +31,28 @@ export class TaskCompletionAiService {
   }
 
   private async analyze(task: any, dprText: string) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (apiKey) {
+    if (this.provider.isConfigured()) {
       try {
-        const response = await fetch("https://api.openai.com/v1/responses", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
+        const parsed: any = await this.provider.generateJson({
+          temperature: 0.1,
+          system: "You are an HRMS task-completion analyst. Compare the assigned task with the employee's DPR text. Return JSON only with percent (0-100), confidence (0-100), summary, evidence, and gaps. Do not reward vague statements. If the task was marked incomplete, treat the reason as a blocker and estimate actual progress from the evidence.",
+          user: {
+            task: {
+              title: task.title,
+              description: task.description,
+              status: task.status,
+              eodStatus: task.eodStatus,
+              outputSummary: task.completionOutputSummary,
+              incompleteReason: task.incompleteReason,
+              proofProvided: Boolean(task.completionProofStorageKey),
+            },
+            dpr: dprText,
           },
-          body: JSON.stringify({
-            model: process.env.AI_MODEL || "gpt-4.1-mini",
-            input: [
-              {
-                role: "system",
-                content: [
-                  {
-                    type: "input_text",
-                    text: "You are an HRMS task-completion analyst. Compare the assigned task with the employee's DPR text. Return JSON only with percent (0-100), confidence (0-100), summary, evidence, and gaps. Do not reward vague statements. If the task was marked incomplete, treat the reason as a blocker and estimate actual progress from the evidence.",
-                  },
-                ],
-              },
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "input_text",
-                    text: JSON.stringify({
-                      task: {
-                        title: task.title,
-                        description: task.description,
-                        status: task.status,
-                        eodStatus: task.eodStatus,
-                        outputSummary: task.completionOutputSummary,
-                        incompleteReason: task.incompleteReason,
-                        proofProvided: Boolean(task.completionProofStorageKey),
-                      },
-                      dpr: dprText,
-                    }),
-                  },
-                ],
-              },
-            ],
-            temperature: 0.1,
-          }),
         });
-        if (!response.ok) throw new Error(`AI provider returned ${response.status}`);
-        const payload: any = await response.json();
-        const text = payload.output_text || payload.output?.flatMap((x: any) => x.content || []).map((x: any) => x.text || "").join(" ") || "";
-        const parsed = JSON.parse(text.replace(/^```json\s*|```$/g, "").trim());
         const percent = Math.max(0, Math.min(100, Number(parsed.percent) || 0));
         return {
           percent,
-          analysis: { ...parsed, provider: "openai", model: process.env.AI_MODEL || "gpt-4.1-mini" },
+          analysis: { ...parsed, provider: this.provider.config.provider, model: this.provider.config.model },
         };
       } catch (error) {
         this.logger.warn(`AI task analysis failed; using deterministic fallback: ${(error as Error).message}`);
@@ -106,7 +76,7 @@ export class TaskCompletionAiService {
         confidence: 45,
         summary: task.eodStatus === "INCOMPLETE" ? "Task was marked incomplete; progress estimated from the available DPR evidence." : "Completion estimated from overlap between the assigned task and DPR evidence.",
         evidence: dprText ? "DPR text was available for comparison." : "No DPR text was available.",
-        gaps: task.eodStatus === "INCOMPLETE" ? task.incompleteReason || "No incomplete reason supplied." : "Configure OPENAI_API_KEY for richer AI analysis.",
+        gaps: task.eodStatus === "INCOMPLETE" ? task.incompleteReason || "No incomplete reason supplied." : "Configure an AI provider API key for richer AI analysis.",
       },
     };
   }

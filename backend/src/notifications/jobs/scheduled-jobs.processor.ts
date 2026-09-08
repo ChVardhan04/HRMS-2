@@ -47,14 +47,8 @@ export class ScheduledJobsProcessor extends WorkerHost {
           return await this.resolve(
             GroupMonitorSchedulerService,
           ).runCheckReminderSweep();
-        case JobName.KRA_DAILY_CALC:
-          return await this.resolve(KraSchedulerService).runDailyCalculation();
-        case JobName.KRA_PRECALC:
-          return await this.resolve(KraSchedulerService).runPreCalculation();
-        case JobName.KRA_FINALIZE:
-          return await this.resolve(
-            KraSchedulerService,
-          ).runFinalizationIfLastWorkingDay();
+        case JobName.KRA_MONTHLY_FINALIZE:
+          return await this.resolve(KraSchedulerService).runMonthlyFinalizationOnSeventh();
         case JobName.LEAVE_ACCRUAL:
           return await this.resolve(LeaveSchedulerService).runMonthlyAccrual();
         case JobName.STRIKE_EVALUATION:

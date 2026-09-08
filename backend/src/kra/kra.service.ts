@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { LeaveStatus, RoleName } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CalendarService } from "../calendar/calendar.service";
-import { CreateKraTemplateDto, KraItemDto } from "./dto/kra.dto";
+import { CreateKraCommitmentDto, CreateKraTemplateDto, KraItemDto, UpdateKraCommitmentDto } from "./dto/kra.dto";
 import { KraAiService } from "./kra-ai.service";
 
 export interface KraBreakdownItem {
@@ -30,6 +30,217 @@ export class KraService {
     private ai: KraAiService,
   ) {}
 
+  private periodBounds(month: number, year: number) {
+    const start = new Date(Date.UTC(year, month - 1, 1));
+    const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
+    return { start, end };
+  }
+
+  private localDateParts(date: Date, timezone: string) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+    return {
+      year: Number(parts.find((p) => p.type === "year")?.value),
+      month: Number(parts.find((p) => p.type === "month")?.value),
+      day: Number(parts.find((p) => p.type === "day")?.value),
+    };
+  }
+
+  private commitmentDeadline(month: number, year: number, timezone = "Asia/Kolkata") {
+    const localAsUtc = Date.UTC(year, month, 0, 23, 59, 59, 999);
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(new Date(localAsUtc));
+    const value = (type: string) => Number(parts.find((p) => p.type === type)?.value || 0);
+    const renderedAsUtc = Date.UTC(value("year"), value("month") - 1, value("day"), value("hour"), value("minute"), value("second"), 999);
+    const offset = renderedAsUtc - localAsUtc;
+    return new Date(localAsUtc - offset);
+  }
+
+  private async currentPeriod() {
+    const org = await this.calendarService.getOrganization();
+    const now = new Date();
+    return { ...this.localDateParts(now, org.timezone), timezone: org.timezone };
+  }
+
+  private async assertCommitmentWindow(month: number, year: number) {
+    const current = await this.currentPeriod();
+    if (current.year !== year || current.month !== month) {
+      throw new BadRequestException("Monthly commitments can only be created or updated for the current month. A new commitment period opens automatically on the first day of each month.");
+    }
+    return current;
+  }
+
+  private words(value: string) {
+    return new Set(
+      value
+        .toLowerCase()
+        .replace(/[^a-z0-9%+]+/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length > 2),
+    );
+  }
+
+  private alignCommitmentToMetrics(commitment: { title: string; description?: string | null; targetUnit?: string | null; targetValue?: number | null }, metrics: any[], selectedMetricId?: string) {
+    if (!metrics.length) {
+      return { status: "UNMATCHED", score: 0, metricId: null, reason: "No KRA metrics are configured for this designation yet." };
+    }
+
+    if (selectedMetricId) {
+      const selected = metrics.find((m) => m.id === selectedMetricId);
+      if (!selected) throw new BadRequestException("The selected KRA metric does not belong to the employee's saved designation KRA.");
+      let status = "MATCHED";
+      let score = 100;
+      let reason = `Explicitly aligned with the saved metric: ${selected.name}.`;
+      if (commitment.targetValue != null && selected.targetValue != null) {
+        const target = Number(selected.targetValue);
+        const employeeTarget = Number(commitment.targetValue);
+        if (target > 0 && employeeTarget < target * 0.5) {
+          status = "NOT_MATCHED"; score = 35;
+          reason = `The commitment is linked to “${selected.name}”, but its target (${employeeTarget}) is far below the saved expected target (${target}).`;
+        } else if (target > 0 && employeeTarget < target) {
+          status = "PARTIAL"; score = 70;
+          reason = `The commitment is linked to “${selected.name}”, but its target (${employeeTarget}) is below the saved expected target (${target}). Review the target before month end.`;
+        }
+      }
+      return { status, score, metricId: selected.id, reason };
+    }
+
+    const commitmentWords = this.words(`${commitment.title} ${commitment.description ?? ""} ${commitment.targetUnit ?? ""}`);
+    let best: { metric: any; score: number; overlap: string[] } | null = null;
+
+    for (const metric of metrics) {
+      const metricWords = this.words(`${metric.name} ${metric.description ?? ""} ${metric.targetText ?? ""} ${metric.unit ?? ""}`);
+      const overlap = [...commitmentWords].filter((word) => metricWords.has(word));
+      let score = metricWords.size ? (overlap.length / Math.max(1, Math.min(metricWords.size, commitmentWords.size))) * 100 : 0;
+      const unit = String(commitment.targetUnit ?? "").trim().toLowerCase();
+      const metricUnit = String(metric.unit ?? "").trim().toLowerCase();
+      if (unit && metricUnit && unit === metricUnit) score += 25;
+      if (commitment.targetValue != null && metric.targetValue != null) score += 10;
+      if (commitment.title.trim().toLowerCase() === String(metric.name).trim().toLowerCase()) score = 100;
+      score = Math.min(100, score);
+      if (!best || score > best.score) best = { metric, score, overlap };
+    }
+
+    const score = Number((best?.score ?? 0).toFixed(1));
+    const status = score >= 55 ? "MATCHED" : score >= 30 ? "PARTIAL" : "NOT_MATCHED";
+    return {
+      status,
+      score,
+      metricId: status === "NOT_MATCHED" ? null : best?.metric.id ?? null,
+      reason: best
+        ? status === "MATCHED"
+          ? `This commitment appears aligned with “${best.metric.name}”.`
+          : status === "PARTIAL"
+            ? `This commitment is only partially aligned with “${best.metric.name}”. Review the wording or select the exact KRA metric.`
+            : `No strong match was found against the saved designation metrics. Update the commitment so it clearly maps to one expected result.`
+        : "No matching KRA metric was found.",
+    };
+  }
+
+  async myCommitments(employeeId: string, month: number, year: number) {
+    return this.prisma.kRACommitment.findMany({
+      where: { employeeId, periodMonth: month, periodYear: year },
+      include: {
+        template: { select: { id: true, roleName: true, name: true } },
+        metric: { select: { id: true, name: true, description: true, targetValue: true, targetText: true, unit: true, weightPercent: true } },
+      },
+      orderBy: [{ status: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async createCommitment(employeeId: string, dto: CreateKraCommitmentDto) {
+    const template = await this.getTemplateForEmployee(employeeId);
+    if (!template.items.length) throw new BadRequestException("No KRA metrics are configured for your designation. Ask HR to configure your designation KRA first.");
+    const current = await this.currentPeriod();
+    await this.assertCommitmentWindow(current.month, current.year);
+    const alignment = this.alignCommitmentToMetrics(
+      { title: dto.title, description: dto.description, targetUnit: dto.targetUnit, targetValue: dto.targetValue },
+      template.items,
+      dto.metricId,
+    );
+    const deadline = this.commitmentDeadline(current.month, current.year, current.timezone);
+    return this.prisma.kRACommitment.create({
+      data: {
+        employeeId,
+        templateId: template.id,
+        metricId: alignment.metricId,
+        periodMonth: current.month,
+        periodYear: current.year,
+        title: dto.title.trim(),
+        description: dto.description?.trim() || null,
+        targetValue: dto.targetValue == null ? null : dto.targetValue,
+        targetUnit: dto.targetUnit?.trim() || null,
+        dueDate: deadline,
+        alignmentStatus: alignment.status,
+        alignmentScore: alignment.score,
+        alignmentReason: alignment.reason,
+        alignmentCheckedAt: new Date(),
+      },
+      include: {
+        template: { select: { id: true, roleName: true, name: true } },
+        metric: { select: { id: true, name: true, description: true, targetValue: true, targetText: true, unit: true, weightPercent: true } },
+      },
+    });
+  }
+
+  async updateCommitment(id: string, employeeId: string, dto: UpdateKraCommitmentDto) {
+    const commitment = await this.prisma.kRACommitment.findUnique({ where: { id }, include: { template: { include: { items: true } } } });
+    if (!commitment) throw new NotFoundException('KRA commitment not found');
+    if (commitment.employeeId !== employeeId) throw new ForbiddenException('You can only update your own commitments');
+    if (commitment.status === 'CANCELLED') throw new BadRequestException('Cancelled commitments cannot be edited');
+    const current = await this.assertCommitmentWindow(commitment.periodMonth, commitment.periodYear);
+
+    const title = dto.title !== undefined ? dto.title.trim() : commitment.title;
+    const description = dto.description !== undefined ? dto.description?.trim() || null : commitment.description;
+    const targetUnit = dto.targetUnit !== undefined ? dto.targetUnit?.trim() || null : commitment.targetUnit;
+    const targetValue = dto.targetValue !== undefined ? dto.targetValue : (commitment.targetValue == null ? null : Number(commitment.targetValue));
+    const metricId = dto.metricId !== undefined ? dto.metricId : commitment.metricId;
+    const alignment = this.alignCommitmentToMetrics({ title, description, targetUnit, targetValue }, commitment.template.items, metricId ?? undefined);
+    const completion = dto.completionPercent == null ? Number(commitment.completionPercent) : Number(dto.completionPercent);
+    const status = dto.status ?? (completion >= 100 ? 'COMPLETED' : completion > 0 ? 'PARTIAL' : commitment.status);
+
+    return this.prisma.kRACommitment.update({
+      where: { id },
+      data: {
+        ...(dto.title !== undefined ? { title } : {}),
+        ...(dto.description !== undefined ? { description } : {}),
+        ...(dto.metricId !== undefined ? { metricId: alignment.metricId } : {}),
+        ...(dto.targetValue !== undefined ? { targetValue: dto.targetValue } : {}),
+        ...(dto.targetUnit !== undefined ? { targetUnit } : {}),
+        completionPercent: completion,
+        status: status as any,
+        alignmentStatus: alignment.status,
+        alignmentScore: alignment.score,
+        alignmentReason: alignment.reason,
+        alignmentCheckedAt: new Date(),
+        ...(dto.employeeNote !== undefined ? { employeeNote: dto.employeeNote?.trim() || null } : {}),
+        ...(dto.evidence !== undefined ? { evidence: dto.evidence?.trim() || null } : {}),
+        ...(completion > 0 || dto.status === 'SUBMITTED' || completion >= 100 ? { submittedAt: commitment.submittedAt ?? new Date() } : {}),
+        dueDate: this.commitmentDeadline(commitment.periodMonth, commitment.periodYear, current.timezone),
+      },
+      include: {
+        template: { select: { id: true, roleName: true, name: true } },
+        metric: { select: { id: true, name: true, description: true, targetValue: true, targetText: true, unit: true, weightPercent: true } },
+      },
+    });
+  }
+
+  async teamCommitments(managerId: string, month: number, year: number, roles: string[] = []) {
+    const isHr = roles.includes(RoleName.HR_ADMIN) || roles.includes(RoleName.SUPER_ADMIN);
+    const employees = await this.prisma.employee.findMany({
+      where: isHr ? { deletedAt: null, employmentStatus: { not: 'EXITED' } } : { managerId, deletedAt: null },
+      select: { id: true },
+    });
+    return this.prisma.kRACommitment.findMany({
+      where: { employeeId: { in: employees.map(e => e.id) }, periodMonth: month, periodYear: year },
+      include: { employee: { select: { id: true, firstName: true, lastName: true, employeeCode: true, department: true, designation: true } }, template: { select: { id: true, roleName: true, name: true } }, metric: { select: { id: true, name: true, weightPercent: true, targetText: true, targetValue: true, unit: true } } },
+      orderBy: [{ employee: { firstName: 'asc' } }, { createdAt: 'asc' }],
+    });
+  }
+
   async listTemplates(departmentId?: string) {
     return this.prisma.kRATemplate.findMany({
       where: { isActive: true, ...(departmentId ? { OR: [{ departmentId }, { departmentId: null }] } : {}) },
@@ -49,7 +260,7 @@ export class KraService {
       if (!d) throw new NotFoundException("Designation not found");
       if (dto.departmentId && d.departmentId !== dto.departmentId) throw new BadRequestException("Designation must belong to the selected department");
     }
-    return this.prisma.kRATemplate.create({ data: { organizationId: org.id, ...dto }, include: { items: true, department: true, designation: true } });
+    return this.prisma.kRATemplate.create({ data: { organizationId: org.id, ...dto, isDefault: false }, include: { items: true, department: true, designation: true } });
   }
 
   async updateTemplate(id: string, dto: Partial<CreateKraTemplateDto>) {
@@ -61,7 +272,7 @@ export class KraService {
       const departmentId = dto.departmentId ?? existing.departmentId;
       if (departmentId && designation.departmentId !== departmentId) throw new BadRequestException("Designation must belong to the selected department");
     }
-    return this.prisma.kRATemplate.update({ where: { id }, data: dto, include: { items: { orderBy: { sortOrder: "asc" } }, department: true, designation: true } });
+    return this.prisma.kRATemplate.update({ where: { id }, data: { ...dto, isDefault: false }, include: { items: { orderBy: { sortOrder: "asc" } }, department: true, designation: true } });
   }
 
   /**
@@ -182,7 +393,6 @@ export class KraService {
         ...(employee.departmentId && employee.designation?.title ? [{ departmentId: employee.departmentId, roleName: employee.designation.title }] : []),
         ...(employee.departmentId ? [{ departmentId: employee.departmentId, roleName: "All Employees" }] : []),
         { departmentId: null, roleName: employee.designation?.title ?? "__none__" },
-        { isDefault: true },
       ] },
       include: { items: { orderBy: { sortOrder: "asc" } }, department: true, designation: true },
     });
@@ -190,7 +400,7 @@ export class KraService {
       const rank = (x: any) => x.designationId ? 5 : x.departmentId && x.roleName !== "All Employees" ? 4 : x.departmentId ? 3 : x.isDefault ? 1 : 2;
       return rank(b) - rank(a);
     })[0];
-    if (!template) throw new NotFoundException("No KRA template configured for this employee");
+    if (!template) throw new NotFoundException("No KRA template configured for this employee designation. HR must configure a result-driven KRA before the employee can add commitments or receive a KRA score.");
     return template;
   }
 
@@ -224,6 +434,11 @@ export class KraService {
     const dprs = await this.prisma.dPR.findMany({ where: { workDay: { employeeId, date: { gte: start, lte: end } } }, include: { entries: true }, orderBy: { createdAt: "asc" } });
     const atsActivities = await this.prisma.candidateActivity.findMany({ where: { performedById: employeeId, createdAt: { gte: start, lte: end } }, select: { id: true, candidateId: true, type: true, body: true, followUpDueAt: true, createdAt: true } });
     const leaves = await this.prisma.leaveRequest.findMany({ where: { employeeId, status: LeaveStatus.APPROVED, startDate: { lte: end }, endDate: { gte: start } }, include: { leaveType: true } });
+    const commitments = await this.prisma.kRACommitment.findMany({
+      where: { employeeId, periodMonth: start.getUTCMonth() + 1, periodYear: start.getUTCFullYear() },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, title: true, description: true, targetValue: true, targetUnit: true, completionPercent: true, status: true, employeeNote: true, evidence: true, dueDate: true, metricId: true, alignmentStatus: true, alignmentScore: true, alignmentReason: true },
+    });
     const expectedWorkingDays = await this.calendarService.countWorkingDaysForEmployee(employeeId, start, end);
     const present = workDays.filter(w => ["PRESENT", "LATE", "WORK_FROM_HOME"].includes(w.attendanceStatus)).length;
     const late = workDays.filter(w => w.isLate).length;
@@ -277,12 +492,24 @@ export class KraService {
       comments: { count: commentEvidence.length, items: commentEvidence },
       dprEntries,
       atsActivity: { total: atsActivities.length, byType: atsCounts, items: atsActivities.slice(0,300) },
+      commitments: commitments.map(c => ({ ...c, targetValue: c.targetValue == null ? null : Number(c.targetValue), completionPercent: Number(c.completionPercent) })),
       leaves: leaves.map(l => ({ type:l.leaveType.name, start:l.startDate, end:l.endDate, days:l.numberOfDays })),
     };
   }
 
   private fallbackAchievement(item: any, evidence: any) {
+    const commitments = Array.isArray(evidence.commitments) ? evidence.commitments : [];
+    const commitmentScores = commitments.map((c: any) => Number(c.completionPercent ?? 0)).filter((v: number) => Number.isFinite(v));
+    const averageCommitment = commitmentScores.length ? commitmentScores.reduce((a: number, b: number) => a + b, 0) / commitmentScores.length : null;
     const key = item.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    if (commitments.length) {
+      const itemWords = key.split('_').filter((w: string) => w.length > 3);
+      const matched = commitments.filter((c: any) => itemWords.some((w: string) => String(c.title).toUpperCase().includes(w)));
+      if (matched.length) {
+        const score = matched.reduce((sum: number, c: any) => sum + Number(c.completionPercent ?? 0), 0) / matched.length;
+        return Math.max(0, Math.min(100, score));
+      }
+    }
     if (key.includes("ATTENDANCE") || key.includes("RELIABILITY") || key.includes("PUNCTUAL")) {
       const denominator = evidence.attendance.expectedWorkingDays || 1;
       return Math.max(0, Math.min(100, (evidence.attendance.effectiveWorkingDays / denominator) * 100));
@@ -293,6 +520,7 @@ export class KraService {
     if (key.includes("QUALITY") || key.includes("ACCURACY") || key.includes("GUIDELINE") || key.includes("COMPLIANCE")) return evidence.dpr.qualityScoreOutOf10 == null ? (evidence.tasks.averageAiCompletionPercent ?? 50) : evidence.dpr.qualityScoreOutOf10 * 10;
     if (key.includes("LEAD") || key.includes("CALL") || key.includes("EMAIL") || key.includes("MEETING") || key.includes("CRM") || key.includes("OUTREACH")) return evidence.atsActivity.total ? 50 : 0;
     if (key.includes("COLLAB") || key.includes("COMMUNICATION") || key.includes("COORDINATION") || key.includes("OWNERSHIP") || key.includes("INITIATIVE") || key.includes("PROBLEM") || key.includes("RESOLUTION")) return evidence.comments.count || evidence.dprEntries.length ? 60 : 30;
+    if (averageCommitment != null) return Math.max(0, Math.min(100, averageCommitment));
     return evidence.tasks.total || evidence.dprEntries.length || evidence.atsActivity.total ? 50 : 0;
   }
 
@@ -302,7 +530,7 @@ export class KraService {
 
   private evidenceForMetric(metric: any, evidence: any) {
     const source = String(metric.evidenceSource || "HRMS_ACTIVITY").toUpperCase();
-    const selected: any = { employee: evidence.employee, period: evidence.period };
+    const selected: any = { employee: evidence.employee, period: evidence.period, commitments: evidence.commitments };
     if (source.includes("ATTENDANCE") || source.includes("HRMS_ACTIVITY")) selected.attendance = evidence.attendance;
     if (source.includes("TASKS") || source.includes("TASK_AI") || source.includes("HRMS_ACTIVITY")) { selected.tasks = evidence.tasks; selected.taskOutputs = evidence.taskOutputs; }
     if (source.includes("DPR") || source.includes("HRMS_ACTIVITY")) { selected.dpr = evidence.dpr; selected.dprEntries = evidence.dprEntries; }
@@ -314,8 +542,12 @@ export class KraService {
   }
 
   private async scoreMetrics(template: any, evidence: any, period: "daily" | "monthly") {
-    const metrics = this.metricPayload(template).map((metric: any) => ({ ...metric, evidence: this.evidenceForMetric(metric, evidence) }));
-    const aiResult = await this.ai.evaluate(metrics, evidence, period);
+    // Employee commitments are month-end result inputs. Daily projections should
+    // continue to reflect actual activity only and must not penalise an employee
+    // for commitments that have not yet reached month end.
+    const evaluationEvidence = period === "monthly" ? evidence : { ...evidence, commitments: [] };
+    const metrics = this.metricPayload(template).map((metric: any) => ({ ...metric, evidence: this.evidenceForMetric(metric, evaluationEvidence) }));
+    const aiResult = await this.ai.evaluate(metrics, evaluationEvidence, period);
     const aiMap = new Map((aiResult?.results ?? []).map((r) => [r.itemId, r]));
     const breakdown: Record<string, KraBreakdownItem> = {};
 
@@ -325,7 +557,7 @@ export class KraService {
     for (const item of template.items) {
       const metric = metrics.find((m: any) => m.itemId === item.id);
       const ai = aiMap.get(item.id);
-      const achievement = ai ? ai.achievementPercent : this.fallbackAchievement(item, evidence);
+      const achievement = ai ? ai.achievementPercent : this.fallbackAchievement(item, evaluationEvidence);
       const weight = Number(item.weightPercent);
       const contribution = (weight / 100) * achievement;
 
@@ -369,6 +601,8 @@ export class KraService {
     // evaluated the configured metrics against their targets. The keyword
     // fallback ignores targets, weights semantics and evaluation methods.
     const aiEvaluated = Boolean(aiResult);
+    const commitments = Array.isArray(evaluationEvidence.commitments) ? evaluationEvidence.commitments : [];
+    const commitmentsReady = period === "monthly" && commitments.length > 0 && commitments.every((c: any) => c.alignmentStatus === "MATCHED" || c.alignmentStatus === "PARTIAL");
 
     return {
       breakdown,
@@ -376,6 +610,7 @@ export class KraService {
       totalWeight: Number(totalWeight.toFixed(2)),
       weightsBalanced,
       aiEvaluated,
+      commitmentsReady,
       metricCount: template.items.length,
       provider: aiResult?.provider ?? "heuristic-fallback",
       model: aiResult?.model ?? null,
@@ -395,11 +630,12 @@ export class KraService {
         totalWeight: scored.totalWeight,
         weightsBalanced: scored.weightsBalanced,
         aiEvaluated: scored.aiEvaluated,
+        commitmentsReady: scored.commitmentsReady ?? false,
         provider: scored.provider,
         model: scored.model,
         // Only a fully-configured template evaluated by AI may drive a strike.
         eligibleForStrike:
-          scored.metricCount > 0 && scored.weightsBalanced && scored.aiEvaluated,
+          scored.metricCount > 0 && scored.weightsBalanced && scored.aiEvaluated && scored.commitmentsReady,
         calculatedAt: new Date().toISOString(),
       },
     };
@@ -545,13 +781,49 @@ export class KraService {
     });
   }
 
+  async calculateForAllEmployees(month: number, year: number) {
+  const employees = await this.prisma.employee.findMany({
+    where: {
+      employmentStatus: { not: "EXITED" },
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+
+  let calculated = 0;
+  const failures: Array<{ employeeId: string; reason: string }> = [];
+
+  for (const employee of employees) {
+    try {
+      await this.calculateForEmployee(employee.id, month, year);
+      calculated++;
+    } catch (error) {
+      failures.push({
+        employeeId: employee.id,
+        reason: (error as Error).message,
+      });
+    }
+  }
+
+  return {
+    calculated,
+    total: employees.length,
+    failed: failures.length,
+    month,
+    year,
+    failures,
+  };
+}
+
+
+
   async finalize(scoreId: string) { return this.prisma.kRAScore.update({ where: { id: scoreId }, data: { isFinal: true } }); }
-  async myScores(employeeId: string) { return this.prisma.kRAScore.findMany({ where:{employeeId}, include:{template:{include:{items:true}}}, orderBy:[{periodYear:"desc"},{periodMonth:"desc"}] }); }
+  async myScores(employeeId: string) { return this.prisma.kRAScore.findMany({ where:{employeeId, isFinal:true}, include:{template:{include:{items:true}}}, orderBy:[{periodYear:"desc"},{periodMonth:"desc"}] }); }
 
   async teamScores(managerId: string, month: number, year: number, roles: string[] = [], departmentId?: string) {
     const isHr = roles.includes(RoleName.HR_ADMIN) || roles.includes(RoleName.SUPER_ADMIN);
     const reports = await this.prisma.employee.findMany({ where:isHr ? { deletedAt:null, employmentStatus:{not:"EXITED"}, ...(departmentId ? {departmentId}:{}) } : {managerId,deletedAt:null}, select:{id:true} });
-    return this.prisma.kRAScore.findMany({ where:{employeeId:{in:reports.map(r=>r.id)},periodMonth:month,periodYear:year}, include:{employee:{select:{id:true,firstName:true,lastName:true,employeeCode:true,department:true,designation:true}},template:true} });
+    return this.prisma.kRAScore.findMany({ where:{employeeId:{in:reports.map(r=>r.id)},periodMonth:month,periodYear:year,isFinal:true}, include:{employee:{select:{id:true,firstName:true,lastName:true,employeeCode:true,department:true,designation:true}},template:true} });
   }
 
   /**
@@ -647,17 +919,9 @@ export class KraService {
   async generateTemplateMetrics(roleName: string, roleProfile: string) {
     const generated = await this.ai.generateMetrics(roleName, roleProfile);
     if (generated) return generated;
-    return {
-      provider: "heuristic-template",
-      model: null,
-      metrics: [
-        { name:"Attendance & Reliability", description:"Working-day attendance, punctuality and monthly late deductions", weightPercent:15, measurementType:"PERCENTAGE", targetText:"Meet department attendance expectations", isAutomated:true, evidenceSource:"ATTENDANCE", evaluationMethod:"Use expected working days, effective working days after approved late penalties, late count and attendance status.", sortOrder:0 },
-        { name:"Task Completion", description:"Assigned task completion and EOD evidence", weightPercent:25, measurementType:"PERCENTAGE", targetText:"Complete assigned work with evidence", isAutomated:true, evidenceSource:"TASKS|TASK_AI", evaluationMethod:"Compare completed tasks and AI completion evidence with assigned tasks; use output/proof and EOD status where available.", sortOrder:1 },
-        { name:"Deadline Adherence", description:"Tasks delivered within committed timelines", weightPercent:15, measurementType:"PERCENTAGE", targetText:"90–100% on-time delivery", isAutomated:true, evidenceSource:"TASKS", evaluationMethod:"Calculate completed tasks finished at or before their recorded due date; do not infer missing due dates.", sortOrder:2 },
-        { name:"DPR Submission", description:"Daily progress reporting compliance", weightPercent:15, measurementType:"PERCENTAGE", targetText:"100% of expected working-day DPRs", isAutomated:true, evidenceSource:"DPR", evaluationMethod:"Compare submitted DPRs with department-specific expected working days in the period.", sortOrder:3 },
-        { name:"Quality & Accuracy", description:"Quality reflected in manager-reviewed DPR evidence and task analysis", weightPercent:15, measurementType:"PERCENTAGE", targetText:"95%+ quality/accuracy", isAutomated:true, evidenceSource:"DPR_QUALITY|TASK_AI", evaluationMethod:"Use manager DPR quality scores and task AI completion/output evidence; reduce confidence where manager review is missing.", sortOrder:4 },
-        { name:"Collaboration & Ownership", description:"Evidence of communication, coordination and ownership", weightPercent:15, measurementType:"PERCENTAGE", targetText:"Consistent proactive ownership", isAutomated:true, evidenceSource:"COMMENTS|DPR|TASKS", evaluationMethod:"Use documented task comments, DPR descriptions/outputs/blockers and completion evidence; never infer interpersonal behavior without records.", sortOrder:5 },
-      ],
-    };
+    throw new BadRequestException(
+      this.ai.lastFailureReason ||
+      "AI metric generation is unavailable. Configure the selected AI provider before saving the designation template.",
+    );
   }
 }

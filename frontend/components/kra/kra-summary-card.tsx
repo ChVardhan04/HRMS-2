@@ -8,7 +8,7 @@ import { useMyKraScores } from '@/features/kra/use-kra';
 
 export function KraSummaryCard() {
   const { data: scores, isLoading } = useMyKraScores();
-  const latest = scores?.[0];
+  const latest = scores?.find((score: any) => score.isFinal);
 
   return (
     <Card>
@@ -21,13 +21,13 @@ export function KraSummaryCard() {
         {isLoading ? (
           <div className="h-16 animate-pulse rounded-md bg-muted" />
         ) : !latest ? (
-          <EmptyState icon={Target} title="No score calculated yet" description="Scores appear after the first monthly calculation." />
+          <EmptyState icon={Target} title="No score calculated yet" description="Final scores appear on the 7th of each month for the previous month." />
         ) : (
           <div className="flex flex-col gap-3">
             <div className="flex items-baseline justify-between">
               <span className="text-2xl font-semibold">{Number(latest.finalScore).toFixed(1)}%</span>
               <span className="text-xs text-muted-foreground">
-                {latest.periodMonth}/{latest.periodYear} {latest.isFinal ? '(final)' : '(projected)'}
+                {latest.periodMonth}/{latest.periodYear} (final)
               </span>
             </div>
             <Progress value={Number(latest.finalScore)} />

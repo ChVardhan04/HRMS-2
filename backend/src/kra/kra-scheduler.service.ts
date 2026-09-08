@@ -3,11 +3,9 @@ import { StrikeStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { KraService } from "./kra.service";
 import { StrikesService } from "../strikes/strikes.service";
-import { NotificationsService } from "../notifications/notifications.service";
 import { CalendarService } from "../calendar/calendar.service";
-import { NotificationCategory } from "../notifications/notification-category.enum";
 
-/** Daily projected KRA + month-end finalization, using each employee's department calendar. */
+/** Monthly result-driven KRA finalization, using each employee's designation metrics and HRMS evidence. */
 @Injectable()
 export class KraSchedulerService {
   private readonly logger = new Logger(KraSchedulerService.name);
@@ -16,7 +14,6 @@ export class KraSchedulerService {
     private prisma: PrismaService,
     private kraService: KraService,
     private strikesService: StrikesService,
-    private notifications: NotificationsService,
     private calendarService: CalendarService,
   ) {}
 
@@ -25,97 +22,41 @@ export class KraSchedulerService {
     return { year:Number(parts.find(p=>p.type==="year")?.value), month:Number(parts.find(p=>p.type==="month")?.value), day:Number(parts.find(p=>p.type==="day")?.value) };
   }
 
-  private async lastWorkingDayForEmployee(employeeId: string, date = new Date()) {
+  /**
+   * Final monthly KRA processing runs on the 7th of each month for the
+   * immediately preceding month. Employees have the entire previous calendar
+   * month to enter/update commitments; once the month closes, commitments are
+   * locked and the 7th-day job calculates the final result from the saved
+   * designation metrics, employee results and recorded HRMS evidence.
+   */
+  async runMonthlyFinalizationOnSeventh(date = new Date()) {
     const org = await this.calendarService.getOrganization();
-    const { year, month } = this.localDateParts(date, org.timezone);
-    const last = new Date(Date.UTC(year, month, 0));
-    while (!(await this.calendarService.isWorkingDayForEmployee(employeeId, last)).working) last.setUTCDate(last.getUTCDate()-1);
-    return last;
-  }
+    const parts = this.localDateParts(date, org.timezone);
+    if (parts.day !== 7) {
+      this.logger.log(`KRA monthly finalization skipped because today is ${parts.day}, not the configured 7th-day calculation date.`);
+      return { finalized: 0, failed: 0, skipped: true };
+    }
 
-  private async isEmployeeLastWorkingDay(employeeId: string, date = new Date()) {
-    const org = await this.calendarService.getOrganization();
-    const local = this.localDateParts(date, org.timezone);
-    const current = new Date(Date.UTC(local.year, local.month-1, local.day));
-    const last = await this.lastWorkingDayForEmployee(employeeId, date);
-    return current.getTime() === last.getTime();
-  }
+    const previous = new Date(Date.UTC(parts.year, parts.month - 2, 1));
+    const month = previous.getUTCMonth() + 1;
+    const year = previous.getUTCFullYear();
+    const employees = await this.prisma.employee.findMany({
+      where: { employmentStatus: { not: "EXITED" }, deletedAt: null },
+      select: { id: true },
+    });
 
-  async runDailyCalculation() {
-    const now = new Date();
-    const org = await this.calendarService.getOrganization();
-    const parts = this.localDateParts(now, org.timezone);
-    const employees = await this.prisma.employee.findMany({ where:{ employmentStatus:{not:"EXITED"}, deletedAt:null }, select:{id:true} });
-    let calculated = 0;
+    let finalized = 0;
     let skipped = 0;
     const failures: Array<{ employeeId: string; reason: string }> = [];
 
     for (const employee of employees) {
-      // Each employee is isolated. Previously a single employee without a KRA
-      // template threw NotFoundException out of the loop and aborted the entire
-      // batch, so every employee after them silently received no KRA that day.
       try {
-        const working = await this.calendarService.isWorkingDayForEmployee(employee.id, now);
-        if (!working.working) { skipped++; continue; }
-        await this.kraService.calculateDailyForEmployee(employee.id, now);
-        await this.kraService.syncMonthlyProjection(employee.id, parts.month, parts.year);
-        calculated++;
-      } catch (error) {
-        failures.push({ employeeId: employee.id, reason: (error as Error).message });
-      }
-    }
-
-    if (failures.length) {
-      this.logger.warn(
-        `Daily KRA calculation could not score ${failures.length} employee(s): ` +
-          failures.map((f) => `${f.employeeId} (${f.reason})`).join("; "),
-      );
-    }
-    this.logger.log(`Daily KRA calculation complete: ${calculated} employee(s), ${skipped} non-working-day skips, ${failures.length} failure(s).`);
-    return { calculated, skipped, failed: failures.length, failures };
-  }
-
-  async runPreCalculation() {
-    const now = new Date();
-    const org = await this.calendarService.getOrganization();
-    const employees = await this.prisma.employee.findMany({ where:{ employmentStatus:{not:"EXITED"}, deletedAt:null }, include:{user:true} });
-    let atRisk = 0;
-    const failures: Array<{ employeeId: string; reason: string }> = [];
-
-    for (const employee of employees) {
-      try {
-        const score = await this.kraService.calculateForEmployee(employee.id, now.getMonth()+1, now.getFullYear());
-        if (Number(score.finalScore) < org.kraStrikeThresholdScore) {
-          atRisk++;
-          await this.notifications.notify({ userId:employee.userId, title:"Mid-month performance check-in", body:`Your projected KRA score this month is ${score.finalScore}%, below the ${org.kraStrikeThresholdScore}% target. There's still time to improve before month-end.`, category:NotificationCategory.KRA, emailAlso:true, recipientEmail:employee.user.email });
+        const template = await this.kraService.getTemplateForEmployee(employee.id);
+        if (!template.items.length) {
+          skipped++;
+          continue;
         }
-      } catch (error) {
-        failures.push({ employeeId: employee.id, reason: (error as Error).message });
-      }
-    }
-
-    if (failures.length) {
-      this.logger.warn(`KRA pre-calculation skipped ${failures.length} employee(s): ` + failures.map((f) => `${f.employeeId} (${f.reason})`).join("; "));
-    }
-    this.logger.log(`KRA pre-calculation complete. ${atRisk} employee(s) at risk, ${failures.length} failure(s).`);
-    return { atRisk, total:employees.length, failed: failures.length, failures };
-  }
-
-  async runFinalizationIfLastWorkingDay() {
-    const now = new Date();
-    const org = await this.calendarService.getOrganization();
-    const parts = this.localDateParts(now, org.timezone);
-    const employees = await this.prisma.employee.findMany({ where:{ employmentStatus:{not:"EXITED"}, deletedAt:null } });
-    let finalized = 0;
-    const failures: Array<{ employeeId: string; reason: string }> = [];
-
-    for (const employee of employees) {
-      try {
-        if (!(await this.isEmployeeLastWorkingDay(employee.id, now))) continue;
-        // Recalculate from the full month's evidence, finalize, THEN evaluate
-        // strikes. finalize() must happen before evaluateForScore() because the
-        // strike engine now refuses to act on a non-final score.
-        const score = await this.kraService.calculateForEmployee(employee.id, parts.month, parts.year);
+        const score = await this.kraService.calculateForEmployee(employee.id, month, year);
         await this.kraService.finalize(score.id);
         await this.strikesService.evaluateForScore(score.id);
         finalized++;
@@ -125,11 +66,13 @@ export class KraSchedulerService {
     }
 
     if (failures.length) {
-      this.logger.warn(`KRA finalization failed for ${failures.length} employee(s): ` + failures.map((f) => `${f.employeeId} (${f.reason})`).join("; "));
+      this.logger.warn(
+        `KRA finalization for ${month}/${year} failed for ${failures.length} employee(s): ` +
+          failures.map((f) => `${f.employeeId} (${f.reason})`).join("; "),
+      );
     }
-    if (!finalized) this.logger.log("No employee reached their department-specific last working day — KRA finalization skipped.");
-    else this.logger.log(`KRA finalized for ${finalized} employee(s).`);
-    return { finalized, failed: failures.length, failures };
+    this.logger.log(`KRA monthly finalization complete for ${month}/${year}: ${finalized} finalized, ${skipped} skipped, ${failures.length} failed.`);
+    return { finalized, skipped, failed: failures.length, failures, month, year };
   }
 
   async runStrikeEvaluation() {

@@ -31,11 +31,22 @@ Requirements: Node 20+, PostgreSQL and optionally Redis.
 3. For a fresh local database run `npx prisma migrate deploy` followed by `npx prisma db seed`.
 4. Start the app with `npm run dev`.
 
-## AI task analysis
+## AI provider
 
-Set `OPENAI_API_KEY` to enable the real AI task-completion analyst. `AI_MODEL` defaults to `gpt-4.1-mini`.
+KRA evaluation and task-completion analysis use a provider abstraction. Configure one provider in `backend/.env`:
 
-If the AI provider is unavailable, the HRMS uses a deterministic fallback and records `provider: heuristic-fallback` in the task analysis. This is a reliability fallback, not a claim of equivalent AI quality.
+- `AI_PROVIDER=openai` with `OPENAI_API_KEY`
+- `AI_PROVIDER=gemini` with `GEMINI_API_KEY`
+- `AI_PROVIDER=anthropic` with `ANTHROPIC_API_KEY`
+- `AI_PROVIDER=openai-compatible` with `AI_API_KEY`, `AI_BASE_URL` and `AI_MODEL`
+
+Switching providers does not require frontend or database changes. Restart the backend after changing the provider.
+
+If the configured AI provider is unavailable, the HRMS records a deterministic fallback for non-strike calculations. A monthly KRA score is not eligible to trigger a performance strike unless the configured AI evaluation succeeds and the KRA commitments/configuration are valid. See `docs/AI_PROVIDER_SETUP.md`.
+
+## Result-driven KRA
+
+HR explicitly configures result-driven KRA metrics for every designation; no generic/default KRA is automatically assigned. Employees create monthly commitments aligned to their saved designation metrics and update completion/results by the last calendar day of the month. The commitment period then locks. On the 7th of each month, the previous month's final KRA is calculated from designation expectations, aligned employee commitments/results and recorded HRMS evidence. See `docs/KRA_RESULT_DRIVEN_WORKFLOW.md`.
 
 ## File storage
 

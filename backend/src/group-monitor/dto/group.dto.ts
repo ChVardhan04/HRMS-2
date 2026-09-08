@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  IsUrl,
 } from "class-validator";
 import { GroupPlatform } from "@prisma/client";
 
@@ -16,7 +17,7 @@ export class CreateGroupDto {
   platform: GroupPlatform;
 
   @IsOptional()
-  @IsString()
+  @IsUrl({ require_tld: false })
   inviteLink?: string;
 
   @IsOptional()

@@ -13,3 +13,4 @@ backend/prisma/migrations/dev.db
 .vercel
 .turbo
 backend/uploads/
+backend/hrms-backend-updated.tar

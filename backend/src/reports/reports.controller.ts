@@ -10,6 +10,12 @@ import { ReportsService } from "./reports.service";
 export class ReportsController {
   constructor(private reportsService: ReportsService) {}
 
+  @Get("leadership-summary")
+  leadershipSummary(@Query("month") month: string, @Query("year") year: string) {
+    return this.reportsService.leadershipSummary(Number(month) || undefined, Number(year) || undefined);
+  }
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Get("employees")
   employees() {
     return this.reportsService.employeeReport();

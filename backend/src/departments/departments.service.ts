@@ -105,15 +105,34 @@ export class DepartmentsService {
 
   async createDepartment(dto: CreateDepartmentDto) {
     const organizationId = await this.defaultOrgId();
-    const department = await this.prisma.department.create({ data: { name: dto.name.trim(), organizationId } });
+    const name = dto.name.trim();
+    if (!name) throw new BadRequestException("Department name is required");
+    const duplicate = await this.prisma.department.findFirst({
+      where: { organizationId, deletedAt: null, name: { equals: name, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (duplicate) throw new BadRequestException("A department with this name already exists");
+    const department = await this.prisma.department.create({ data: { name, organizationId } });
     await this.ensurePolicy(department.id);
     await this.ensureDefaultLeavePolicies(department.id);
     return this.getDepartment(department.id);
   }
 
   async updateDepartment(id: string, dto: UpdateDepartmentDto) {
-    await this.getDepartment(id);
-    return this.prisma.department.update({ where: { id }, data: { name: dto.name.trim() } });
+    const current = await this.getDepartment(id);
+    const name = dto.name.trim();
+    if (!name) throw new BadRequestException("Department name is required");
+    const duplicate = await this.prisma.department.findFirst({
+      where: {
+        organizationId: current.organizationId,
+        deletedAt: null,
+        name: { equals: name, mode: "insensitive" },
+        NOT: { id },
+      },
+      select: { id: true },
+    });
+    if (duplicate) throw new BadRequestException("A department with this name already exists");
+    return this.prisma.department.update({ where: { id }, data: { name } });
   }
 
   async updatePolicy(id: string, dto: DepartmentPolicyDto) {
@@ -145,12 +164,42 @@ export class DepartmentsService {
     if (!department) throw new NotFoundException("Department not found");
     const title = dto.title.trim();
     if (!title) throw new BadRequestException("Designation title is required");
+    const duplicate = await this.prisma.designation.findFirst({
+      where: { departmentId: department.id, deletedAt: null, title: { equals: title, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (duplicate) throw new BadRequestException("A designation with this name already exists in this department");
     return this.prisma.designation.create({ data: { title, departmentId: department.id } });
   }
 
+  async updateDesignation(id: string, dto: { title: string }) {
+    const current = await this.prisma.designation.findFirst({ where: { id, deletedAt: null }, include: { department: true } });
+    if (!current) throw new NotFoundException("Designation not found");
+    const title = dto.title.trim();
+    if (!title) throw new BadRequestException("Designation title is required");
+    const duplicate = await this.prisma.designation.findFirst({
+      where: { departmentId: current.departmentId, deletedAt: null, title: { equals: title, mode: "insensitive" }, NOT: { id } },
+      select: { id: true },
+    });
+    if (duplicate) throw new BadRequestException("A designation with this name already exists in this department");
+    return this.prisma.designation.update({ where: { id }, data: { title }, include: { department: true } });
+  }
+
+  async softDeleteDesignation(id: string) {
+    const designation = await this.prisma.designation.findFirst({ where: { id, deletedAt: null } });
+    if (!designation) throw new NotFoundException("Designation not found");
+    const [employees, kraTemplates] = await Promise.all([
+      this.prisma.employee.count({ where: { designationId: id, deletedAt: null } }),
+      this.prisma.kRATemplate.count({ where: { designationId: id, isActive: true } }),
+    ]);
+    if (employees) throw new BadRequestException(`Cannot delete this designation because ${employees} employee(s) are assigned to it. Reassign them first.`);
+    // KRA templates are retained for historical/configuration safety; the designation is hidden from new assignments.
+    return this.prisma.designation.update({ where: { id }, data: { deletedAt: new Date() } });
+  }
+
   async softDeleteDepartment(id: string) {
-    const activeEmployees = await this.prisma.employee.count({ where: { departmentId: id, deletedAt: null, employmentStatus: { not: "EXITED" } } });
-    if (activeEmployees) throw new BadRequestException("Move active employees to another department before deleting it");
+    const employees = await this.prisma.employee.count({ where: { departmentId: id, deletedAt: null } });
+    if (employees) throw new BadRequestException("Move all employees to another department before deleting it");
     return this.prisma.department.update({ where: { id }, data: { deletedAt: new Date() } });
   }
 }

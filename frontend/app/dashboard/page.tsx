@@ -19,5 +19,7 @@ export default function DashboardPage() {
     EMPLOYEE: <EmployeeDashboard />,
   };
 
-  return <AppShell title="Dashboard">{DashboardByRole[primaryRole] ?? <EmployeeDashboard />}</AppShell>;
+  const dashboardTitle = primaryRole === 'LEADERSHIP' ? 'Leadership Dashboard' : primaryRole === 'MANAGER' ? 'Manager Dashboard' : primaryRole === 'HR_ADMIN' || primaryRole === 'SUPER_ADMIN' ? 'HR Dashboard' : 'Dashboard';
+
+  return <AppShell title={dashboardTitle}>{DashboardByRole[primaryRole] ?? <EmployeeDashboard />}</AppShell>;
 }

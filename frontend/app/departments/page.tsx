@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, CalendarDays, Clock3, Plus, Save, Users, Target, Palmtree, BriefcaseBusiness } from 'lucide-react';
+import { Building2, CalendarDays, Clock3, Pencil, Plus, Save, Trash2, Users, Target, Palmtree, BriefcaseBusiness } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useCreateDepartment, useDepartment, useDepartments, useCreateDesignation, useUpdateDepartmentLeavePolicy, useUpdateDepartmentPolicy } from '@/features/departments/use-departments';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useCreateDepartment, useDepartment, useDepartments, useCreateDesignation, useDeleteDepartment, useDeleteDesignation, useUpdateDepartmentDirect, useUpdateDesignation, useUpdateDepartmentLeavePolicy, useUpdateDepartmentPolicy } from '@/features/departments/use-departments';
 
 const mins = (v: string) => { const [h,m] = v.split(':').map(Number); return h * 60 + m; };
 const time = (v: number) => `${String(Math.floor(v/60)).padStart(2,'0')}:${String(v%60).padStart(2,'0')}`;
@@ -32,6 +33,14 @@ export default function DepartmentsPage() {
   const createDesignation = useCreateDesignation();
   const [designationTitle, setDesignationTitle] = useState('');
   const [policy, setPolicy] = useState<any>(null);
+  const [editingDepartment, setEditingDepartment] = useState<any>(null);
+  const [deletingDepartment, setDeletingDepartment] = useState<any>(null);
+  const [editingDesignation, setEditingDesignation] = useState<any>(null);
+  const [deletingDesignation, setDeletingDesignation] = useState<any>(null);
+  const updateDepartment = useUpdateDepartmentDirect(editingDepartment?.id);
+  const deleteDepartment = useDeleteDepartment(deletingDepartment?.id);
+  const updateDesignation = useUpdateDesignation();
+  const deleteDesignation = useDeleteDesignation();
 
   useEffect(() => { if (!selectedId && departments?.[0]?.id) setSelectedId(departments[0].id); }, [departments, selectedId]);
   useEffect(() => { if (department?.policy) setPolicy({ ...department.policy }); }, [department]);
@@ -44,11 +53,15 @@ export default function DepartmentsPage() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /> Department administration</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Select value={selectedId} onValueChange={setSelectedId}><SelectTrigger className="w-64"><SelectValue placeholder="Select department" /></SelectTrigger><SelectContent>{departments?.map((d:any)=><SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select>
-            <Input className="w-64" value={newName} onChange={(e)=>setNewName(e.target.value)} placeholder="New department name" />
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <Select value={selectedId} onValueChange={setSelectedId}><SelectTrigger className="w-full sm:w-64"><SelectValue placeholder="Select department" /></SelectTrigger><SelectContent>{departments?.map((d:any)=><SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}</SelectContent></Select>
+            <Input className="w-full sm:w-64" value={newName} onChange={(e)=>setNewName(e.target.value)} placeholder="New department name" />
             <Button onClick={()=>{ if(newName.trim()) create.mutate(newName.trim(), { onSuccess: ()=>setNewName('') }); }} disabled={!newName.trim() || create.isPending}><Plus className="h-4 w-4" /> Add Department</Button>
           </div>
+          {department && <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={()=>setEditingDepartment({ id:department.id, name:department.name })}><Pencil className="h-3.5 w-3.5"/> Edit name</Button>
+            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={()=>setDeletingDepartment(department)}><Trash2 className="h-3.5 w-3.5"/> Delete / deactivate</Button>
+          </div>}
         </CardContent>
       </Card>
 
@@ -95,13 +108,39 @@ export default function DepartmentsPage() {
           <TabsContent value="designations"><Card><CardHeader><CardTitle className="flex items-center gap-2"><BriefcaseBusiness className="h-4 w-4 text-primary"/> Designations</CardTitle></CardHeader><CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">HR can create new designations for this department. New designations immediately become available in the employee master for employees assigned to this department.</p>
             <div className="flex max-w-xl gap-2"><Input value={designationTitle} onChange={(e)=>setDesignationTitle(e.target.value)} placeholder="e.g. Senior HR Executive"/><Button disabled={!designationTitle.trim() || createDesignation.isPending} onClick={()=>createDesignation.mutate({title:designationTitle.trim(),departmentId:selectedId},{onSuccess:()=>setDesignationTitle('')})}><Plus className="h-4 w-4"/> Add designation</Button></div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{department.designations?.map((d:any)=><div key={d.id} className="rounded-lg border p-3 text-sm font-medium">{d.title}</div>)}{!department.designations?.length&&<p className="text-sm text-muted-foreground">No designations created for this department yet.</p>}</div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{department.designations?.map((d:any)=><div key={d.id} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border p-3 text-sm"><span className="truncate font-medium">{d.title}</span><div className="flex shrink-0 gap-1"><Button size="icon" variant="ghost" onClick={()=>setEditingDesignation({ ...d })}><Pencil className="h-4 w-4"/></Button><Button size="icon" variant="ghost" onClick={()=>setDeletingDesignation(d)}><Trash2 className="h-4 w-4 text-destructive"/></Button></div></div>)}{!department.designations?.length&&<p className="text-sm text-muted-foreground">No designations created for this department yet.</p>}</div>
           </CardContent></Card></TabsContent>
 
           <TabsContent value="overview"><Card><CardHeader><CardTitle>{department.name} details</CardTitle></CardHeader><CardContent className="space-y-4"><div className="flex gap-3"><Select value={String(month)} onValueChange={(v)=>setMonth(Number(v))}><SelectTrigger className="w-44"><SelectValue/></SelectTrigger><SelectContent>{Array.from({length:12},(_,i)=><SelectItem key={i+1} value={String(i+1)}>{new Date(2026,i,1).toLocaleString('en-US',{month:'long'})}</SelectItem>)}</SelectContent></Select></div><div><p className="text-sm font-medium">Designations</p><div className="mt-2 flex flex-wrap gap-2">{department.designations?.length ? department.designations.map((d:any)=><span key={d.id} className="rounded-full border px-3 py-1 text-sm">{d.title}</span>) : <span className="text-sm text-muted-foreground">No designations configured yet.</span>}</div></div></CardContent></Card></TabsContent>
         </Tabs>
       </>}
     </div>
+
+    <Dialog open={!!editingDepartment} onOpenChange={(v)=>!v&&setEditingDepartment(null)}>
+      <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Edit department</DialogTitle><DialogDescription>Rename the existing department. Employees, policies, calendars and KRA links stay attached to the same department.</DialogDescription></DialogHeader>
+        <div><Label>Department name</Label><Input value={editingDepartment?.name ?? ''} onChange={(e)=>setEditingDepartment((x:any)=>({ ...x, name:e.target.value }))}/></div>
+        <DialogFooter><Button variant="ghost" onClick={()=>setEditingDepartment(null)}>Cancel</Button><Button disabled={!editingDepartment?.name?.trim() || updateDepartment.isPending} onClick={()=>updateDepartment.mutate(editingDepartment.name.trim(),{onSuccess:()=>setEditingDepartment(null)})}>{updateDepartment.isPending ? 'Saving...' : 'Save changes'}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!deletingDepartment} onOpenChange={(v)=>!v&&setDeletingDepartment(null)}>
+      <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Delete / deactivate department?</DialogTitle><DialogDescription>This is protected. If active employees still belong to “{deletingDepartment?.name}”, the backend will refuse the operation. Otherwise the department is removed from active lists without destroying historical policy data.</DialogDescription></DialogHeader>
+        <DialogFooter><Button variant="ghost" onClick={()=>setDeletingDepartment(null)}>Cancel</Button><Button variant="destructive" disabled={deleteDepartment.isPending} onClick={()=>deleteDepartment.mutate(undefined,{onSuccess:()=>{setDeletingDepartment(null); if(selectedId===deletingDepartment.id) setSelectedId('');}})}>{deleteDepartment.isPending ? 'Removing...' : 'Delete / deactivate'}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!editingDesignation} onOpenChange={(v)=>!v&&setEditingDesignation(null)}>
+      <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Edit designation</DialogTitle><DialogDescription>Rename the existing designation without breaking its employee or KRA relationship.</DialogDescription></DialogHeader>
+        <div><Label>Designation name</Label><Input value={editingDesignation?.title ?? ''} onChange={(e)=>setEditingDesignation((x:any)=>({ ...x, title:e.target.value }))}/></div>
+        <DialogFooter><Button variant="ghost" onClick={()=>setEditingDesignation(null)}>Cancel</Button><Button disabled={!editingDesignation?.title?.trim() || updateDesignation.isPending} onClick={()=>updateDesignation.mutate({id:editingDesignation.id,title:editingDesignation.title.trim()},{onSuccess:()=>setEditingDesignation(null)})}>{updateDesignation.isPending ? 'Saving...' : 'Save changes'}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!deletingDesignation} onOpenChange={(v)=>!v&&setDeletingDesignation(null)}>
+      <DialogContent className="max-w-md"><DialogHeader><DialogTitle>Remove designation?</DialogTitle><DialogDescription>“{deletingDesignation?.title}” can only be removed when no active employee is assigned to it. KRA history is retained.</DialogDescription></DialogHeader>
+        <DialogFooter><Button variant="ghost" onClick={()=>setDeletingDesignation(null)}>Cancel</Button><Button variant="destructive" disabled={deleteDesignation.isPending} onClick={()=>deleteDesignation.mutate(deletingDesignation.id,{onSuccess:()=>setDeletingDesignation(null)})}>{deleteDesignation.isPending ? 'Removing...' : 'Remove designation'}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
   </AppShell>;
 }
 

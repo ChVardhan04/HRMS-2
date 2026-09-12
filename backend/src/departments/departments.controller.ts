@@ -9,6 +9,7 @@ import {
   DepartmentLeavePolicyDto,
   DepartmentPolicyDto,
   UpdateDepartmentDto,
+  UpdateDesignationDto,
 } from "./dto/department.dto";
 
 @Controller("departments")
@@ -44,6 +45,20 @@ export class DepartmentsController {
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Post("designations")
   createDesignation(@Body() dto: CreateDesignationDto) { return this.departmentsService.createDesignation(dto); }
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Patch("designations/:id")
+  @Audit({ action: "designation.update", entityType: "Designation" })
+  updateDesignation(@Param("id") id: string, @Body() dto: UpdateDesignationDto) {
+    return this.departmentsService.updateDesignation(id, dto);
+  }
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Audit({ action: "designation.delete", entityType: "Designation" })
+  @Delete("designations/:id")
+  removeDesignation(@Param("id") id: string) {
+    return this.departmentsService.softDeleteDesignation(id);
+  }
 
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Audit({ action: "department.delete", entityType: "Department" })

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -76,10 +77,23 @@ export class EmployeesController {
   }
 
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Get(":id/deletion-info")
+  deletionInfo(@Param("id") id: string) {
+    return this.employeesService.getDeletionInfo(id);
+  }
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Audit({ action: "employee.delete", entityType: "Employee" })
+  @Delete(":id")
+  remove(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.employeesService.remove(id, user);
+  }
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Audit({ action: "employee.deactivate", entityType: "Employee" })
   @Patch(":id/deactivate")
-  deactivate(@Param("id") id: string) {
-    return this.employeesService.deactivate(id);
+  deactivate(@CurrentUser() user: AuthenticatedUser, @Param("id") id: string) {
+    return this.employeesService.deactivate(id, user);
   }
 
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)

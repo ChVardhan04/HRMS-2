@@ -10,6 +10,54 @@ export class ReportsService {
     private calendarService: CalendarService,
   ) {}
 
+  async leadershipSummary(month?: number, year?: number) {
+    const now = new Date();
+    const m = month && month >= 1 && month <= 12 ? month : now.getMonth() + 1;
+    const y = year || now.getFullYear();
+    const start = new Date(Date.UTC(y, m - 1, 1));
+    const end = new Date(Date.UTC(y, m, 1));
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayEnd = new Date(todayStart.getTime() + 86400000);
+
+    const [activeEmployees, presentToday, absentToday, leaveToday, pendingLeaves, kraScores, activeStrikes, departments, openJobs, candidates] = await Promise.all([
+      this.prisma.employee.count({ where: { deletedAt: null, employmentStatus: { not: "EXITED" } } }),
+      this.prisma.workDay.count({ where: { date: { gte: todayStart, lt: todayEnd }, attendanceStatus: { in: ["PRESENT", "LATE", "HALF_DAY", "WORK_FROM_HOME"] }, employee: { deletedAt: null, employmentStatus: { not: "EXITED" } } } }),
+      this.prisma.workDay.count({ where: { date: { gte: todayStart, lt: todayEnd }, attendanceStatus: "ABSENT", employee: { deletedAt: null, employmentStatus: { not: "EXITED" } } } }),
+      this.prisma.workDay.count({ where: { date: { gte: todayStart, lt: todayEnd }, attendanceStatus: "ON_LEAVE", employee: { deletedAt: null, employmentStatus: { not: "EXITED" } } } }),
+      this.prisma.leaveRequest.count({ where: { status: { in: ["PENDING", "MANAGER_APPROVED"] }, employee: { deletedAt: null, employmentStatus: { not: "EXITED" } } } }),
+      this.prisma.kRAScore.findMany({ where: { periodMonth: m, periodYear: y, employee: { deletedAt: null, employmentStatus: { not: "EXITED" } } }, select: { finalScore: true } }),
+      this.prisma.strike.count({ where: { status: "ACTIVE", employee: { deletedAt: null, employmentStatus: { not: "EXITED" } } } }),
+      this.prisma.department.findMany({ where: { deletedAt: null }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+      this.prisma.jobRequisition.count({ where: { status: "OPEN" } }),
+      this.prisma.candidate.count(),
+    ]);
+
+    const departmentSummary = await Promise.all(departments.map(async (department) => {
+      const [headcount, scores] = await Promise.all([
+        this.prisma.employee.count({ where: { departmentId: department.id, deletedAt: null, employmentStatus: { not: "EXITED" } } }),
+        this.prisma.kRAScore.findMany({ where: { employee: { departmentId: department.id, deletedAt: null, employmentStatus: { not: "EXITED" } }, periodMonth: m, periodYear: y }, select: { finalScore: true } }),
+      ]);
+      return {
+        id: department.id,
+        name: department.name,
+        headcount,
+        averageKra: scores.length ? Number((scores.reduce((sum, score) => sum + Number(score.finalScore), 0) / scores.length).toFixed(1)) : null,
+      };
+    }));
+
+    return {
+      period: { month: m, year: y },
+      headcount: activeEmployees,
+      attendance: { present: presentToday, absent: absentToday, onLeave: leaveToday },
+      pendingLeaves,
+      averageKra: kraScores.length ? Number((kraScores.reduce((sum, score) => sum + Number(score.finalScore), 0) / kraScores.length).toFixed(1)) : null,
+      activeStrikes,
+      openJobs,
+      candidates,
+      departments: departmentSummary,
+    };
+  }
+
   async employeeReport() {
     return this.prisma.employee.findMany({
       where: { deletedAt: null },

@@ -33,6 +33,12 @@ export class CreateDesignationDto {
   departmentId: string;
 }
 
+export class UpdateDesignationDto {
+  @IsString()
+  @IsNotEmpty()
+  title: string;
+}
+
 export class DepartmentPolicyDto {
   @IsOptional() @IsBoolean() mondayWorking?: boolean;
   @IsOptional() @IsBoolean() tuesdayWorking?: boolean;

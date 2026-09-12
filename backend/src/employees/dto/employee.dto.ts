@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsBoolean,
   IsDateString,
@@ -9,8 +9,9 @@ import {
   IsString,
   MinLength,
   IsUUID,
+  IsArray,
 } from "class-validator";
-import { EmploymentStatus, EmploymentType } from "@prisma/client";
+import { EmploymentStatus, EmploymentType, RoleName } from "@prisma/client";
 import { PaginationDto } from "../../common/dto/pagination.dto";
 
 export class CreateEmployeeDto {
@@ -89,7 +90,9 @@ export class CreateEmployeeDto {
   payrollEligible?: boolean;
 
   @IsOptional()
-  roleNames?: string[];
+  @IsArray()
+  @IsEnum(RoleName, { each: true })
+  roleNames?: RoleName[];
 }
 
 export class UpdateEmployeeDto {
@@ -174,6 +177,11 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsBoolean()
   payrollEligible?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsEnum(RoleName, { each: true })
+  roleNames?: RoleName[];
 }
 
 export class EmployeeQueryDto extends PaginationDto {
@@ -186,7 +194,7 @@ export class EmployeeQueryDto extends PaginationDto {
   employmentStatus?: EmploymentStatus;
 
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(({ value }) => value === true || value === "true")
   @IsBoolean()
   includeExited?: boolean;
 }

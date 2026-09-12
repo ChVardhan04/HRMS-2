@@ -40,6 +40,28 @@ export class EmployeesService {
     return `EMP-${Date.now().toString(36).toUpperCase()}${crypto.randomInt(100, 999)}`;
   }
 
+  private async validateReportingStructure(
+    employeeId: string | undefined,
+    managerId?: string,
+    skipLevelManagerId?: string,
+  ) {
+    const ids = [managerId, skipLevelManagerId].filter(Boolean) as string[];
+    if (!ids.length) return;
+    if (employeeId && ids.includes(employeeId)) {
+      throw new BadRequestException("An employee cannot report to themselves");
+    }
+    if (managerId && skipLevelManagerId && managerId === skipLevelManagerId) {
+      throw new BadRequestException("Reporting manager and skip-level manager must be different");
+    }
+    const managers = await this.prisma.employee.findMany({
+      where: { id: { in: ids }, deletedAt: null, employmentStatus: { not: "EXITED" } },
+      select: { id: true },
+    });
+    if (managers.length !== ids.length) {
+      throw new BadRequestException("One or more selected managers are not active employees");
+    }
+  }
+
   async create(dto: CreateEmployeeDto) {
     const email = dto.email.trim().toLowerCase();
     const existingUser = await this.prisma.user.findUnique({
@@ -57,13 +79,18 @@ export class EmployeesService {
       if (dto.departmentId && designation.departmentId !== dto.departmentId) throw new BadRequestException("Selected designation does not belong to the selected department");
     }
 
+    await this.validateReportingStructure(undefined, dto.managerId, dto.skipLevelManagerId);
+
     const requestedRoles = dto.roleNames?.length
       ? [...new Set(dto.roleNames)]
       : [RoleName.EMPLOYEE];
 
+    // HR can assign normal workforce roles plus Leadership.
+    // Privileged administrative roles are never assignable from Employee Master.
     const allowedRoles: RoleName[] = [
       RoleName.EMPLOYEE,
       RoleName.MANAGER,
+      RoleName.LEADERSHIP,
     ];
 
     const invalidRole = requestedRoles.find(
@@ -71,7 +98,7 @@ export class EmployeesService {
     );
     if (invalidRole) {
       throw new ForbiddenException(
-        "HR can create employee or manager accounts only",
+        "HR can assign Employee, Manager or Leadership roles only",
       );
     }
 
@@ -414,7 +441,47 @@ export class EmployeesService {
       throw new ForbiddenException(
         "Only HR can update employee master records",
       );
-    return this.prisma.employee.update({
+    await this.validateReportingStructure(id, dto.managerId, dto.skipLevelManagerId);
+    const requestedRoles = dto.roleNames?.length
+      ? [...new Set(dto.roleNames)]
+      : undefined;
+    if (requestedRoles) {
+      const currentRoles = await this.prisma.userRole.findMany({
+        where: { userId: employee.userId },
+        include: { role: true },
+      });
+      const currentRoleNames = currentRoles.map((r) => r.role.name);
+      const removingHrRole = currentRoleNames.includes(RoleName.HR_ADMIN) && !requestedRoles.includes(RoleName.HR_ADMIN);
+      if (removingHrRole) {
+        const activeHrAdmins = await this.prisma.user.count({
+          where: { isActive: true, roles: { some: { role: { name: RoleName.HR_ADMIN } } } },
+        });
+        if (activeHrAdmins <= 1) {
+          throw new BadRequestException("At least one active HR Admin account must remain configured");
+        }
+      }
+      const allowedRoles: RoleName[] = [
+        RoleName.EMPLOYEE,
+        RoleName.MANAGER,
+        RoleName.LEADERSHIP,
+      ];
+      const invalidRole = requestedRoles.find((role) => !allowedRoles.includes(role));
+      if (invalidRole) {
+        throw new ForbiddenException(
+          "HR can assign Employee, Manager or Leadership roles only",
+        );
+      }
+      const roleRecords = await this.prisma.role.findMany({
+        where: { name: { in: requestedRoles } },
+        select: { id: true, name: true },
+      });
+      if (roleRecords.length !== requestedRoles.length) {
+        throw new BadRequestException("One or more selected roles are not configured");
+      }
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.employee.update({
       where: { id },
       data: {
         firstName: dto.firstName,
@@ -451,10 +518,125 @@ export class EmployeesService {
         manager: { select: { id: true, firstName: true, lastName: true } },
       },
     });
+
+      if (requestedRoles) {
+        const roleRecords = await tx.role.findMany({
+          where: { name: { in: requestedRoles } },
+          select: { id: true },
+        });
+        await tx.userRole.deleteMany({ where: { userId: employee.userId } });
+        await Promise.all(
+          roleRecords.map((role) =>
+            tx.userRole.create({ data: { userId: employee.userId, roleId: role.id } }),
+          ),
+        );
+      }
+      return result;
+    });
+    return updated;
   }
 
-  async deactivate(id: string) {
-    await this.findOne(id);
+  async getDeletionInfo(id: string) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, employeeCode: true, firstName: true, lastName: true, userId: true },
+    });
+    if (!employee) throw new NotFoundException("Employee not found");
+
+    const [
+      reports, skipLevelReports, documents, workDays, leaveBalances, leaveRequests,
+      approvedLeaves, assignedTodos, createdTodos, dprReviews, kraScores, kraCommitments,
+      dailyKraScores, strikes, recruiterCandidates, hiringManagerCandidates,
+      candidateActivities, screenings, interviewPanelist, groupsOwned, groupMemberships,
+      groupChecks, birthdayLogs, policyAcknowledgements, auditLogs,
+    ] = await Promise.all([
+      this.prisma.employee.count({ where: { managerId: id, deletedAt: null } }),
+      this.prisma.employee.count({ where: { skipLevelManagerId: id, deletedAt: null } }),
+      this.prisma.document.count({ where: { employeeId: id } }),
+      this.prisma.workDay.count({ where: { employeeId: id } }),
+      this.prisma.leaveBalance.count({ where: { employeeId: id } }),
+      this.prisma.leaveRequest.count({ where: { employeeId: id } }),
+      this.prisma.leaveRequest.count({ where: { managerId: id } }),
+      this.prisma.todo.count({ where: { assigneeId: id } }),
+      this.prisma.todo.count({ where: { creatorId: id } }),
+      this.prisma.dPR.count({ where: { reviewerId: id } }),
+      this.prisma.kRAScore.count({ where: { employeeId: id } }),
+      this.prisma.kRACommitment.count({ where: { employeeId: id } }),
+      this.prisma.kRADailyScore.count({ where: { employeeId: id } }),
+      this.prisma.strike.count({ where: { employeeId: id } }),
+      this.prisma.candidate.count({ where: { recruiterId: id } }),
+      this.prisma.candidate.count({ where: { hiringManagerId: id } }),
+      this.prisma.candidateActivity.count({ where: { performedById: id } }),
+      this.prisma.atsScreeningResult.count({ where: { screenedById: id } }),
+      this.prisma.interviewPanelist.count({ where: { employeeId: id } }),
+      this.prisma.communicationGroup.count({ where: { ownerId: id } }),
+      this.prisma.groupMember.count({ where: { employeeId: id } }),
+      this.prisma.groupCheckLog.count({ where: { checkedById: id } }),
+      this.prisma.birthdayNotificationLog.count({ where: { employeeId: id } }),
+      this.prisma.policyAcknowledgement.count({ where: { employeeId: id } }),
+      this.prisma.auditLog.count({ where: { userId: employee.userId } }),
+    ]);
+
+    const blockingRecords = {
+      reports, skipLevelReports, documents, workDays, leaveBalances, leaveRequests,
+      approvedLeaves, assignedTodos, createdTodos, dprReviews, kraScores, kraCommitments,
+      dailyKraScores, strikes, recruiterCandidates, hiringManagerCandidates, candidateActivities,
+      screenings, interviewPanelist, groupsOwned, groupMemberships, groupChecks, birthdayLogs,
+      policyAcknowledgements, auditLogs,
+    };
+    const totalBusinessRecords = Object.entries(blockingRecords)
+      .filter(([key]) => key !== "auditLogs")
+      .reduce((sum, [, count]) => sum + Number(count), 0);
+
+    return {
+      employee,
+      canDelete: totalBusinessRecords === 0 && auditLogs === 0,
+      totalBusinessRecords,
+      blockingRecords,
+      recommendation: totalBusinessRecords === 0 && auditLogs === 0
+        ? "PERMANENT_DELETE"
+        : "DEACTIVATE",
+    };
+  }
+
+  async remove(id: string, actor?: { userId: string }) {
+    const target = await this.prisma.employee.findFirst({ where: { id, deletedAt: null }, include: { user: { include: { roles: { include: { role: true } } } } } });
+    if (!target) throw new NotFoundException("Employee not found");
+    if (actor?.userId === target.userId) throw new BadRequestException("You cannot delete your own account");
+    const targetIsHr = target.user.roles.some((r) => r.role.name === RoleName.HR_ADMIN);
+    if (targetIsHr) {
+      const activeHrAdmins = await this.prisma.user.count({ where: { isActive: true, roles: { some: { role: { name: RoleName.HR_ADMIN } } } } });
+      if (activeHrAdmins <= 1) throw new BadRequestException("The last active HR Admin cannot be deleted");
+    }
+    const info = await this.getDeletionInfo(id);
+    if (!info.canDelete) {
+      throw new BadRequestException({
+        code: "EMPLOYEE_HAS_HISTORY",
+        message: "This employee has HRMS history and cannot be permanently deleted. Deactivate the employee instead.",
+        recommendation: "DEACTIVATE",
+        blockingRecords: info.blockingRecords,
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const employee = await tx.employee.findUnique({ where: { id }, select: { userId: true } });
+      if (!employee) throw new NotFoundException("Employee not found");
+      await tx.notification.deleteMany({ where: { userId: employee.userId } });
+      await tx.employee.delete({ where: { id } });
+      await tx.user.delete({ where: { id: employee.userId } });
+      return { success: true, deletedEmployeeId: id };
+    });
+  }
+
+  async deactivate(id: string, actor?: { userId: string }) {
+    const employee = await this.prisma.employee.findFirst({ where: { id, deletedAt: null }, include: { user: { include: { roles: { include: { role: true } } } } } });
+    if (!employee) throw new NotFoundException("Employee not found");
+    if (actor?.userId === employee.userId) throw new BadRequestException("You cannot deactivate your own account");
+    const targetIsHr = employee.user.roles.some((r) => r.role.name === RoleName.HR_ADMIN);
+    if (targetIsHr) {
+      const activeHrAdmins = await this.prisma.user.count({ where: { isActive: true, roles: { some: { role: { name: RoleName.HR_ADMIN } } } } });
+      if (activeHrAdmins <= 1) throw new BadRequestException("The last active HR Admin cannot be deactivated");
+    }
     return this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.update({
         where: { id },

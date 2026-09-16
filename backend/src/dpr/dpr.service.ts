@@ -241,10 +241,21 @@ export class DprService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      const totalHours = dto.entries.reduce((sum, entry) => sum + Number(entry.hours), 0);
+      if (!Number.isFinite(totalHours) || totalHours <= 0 || totalHours > 24) {
+        throw new BadRequestException(
+          `Total DPR hours must be greater than 0 and no more than 24. Current total: ${Number.isFinite(totalHours) ? totalHours.toFixed(2) : "invalid"}h`,
+        );
+      }
+
       for (const entry of dto.entries) {
-        if (entry.hours <= 0 || entry.hours > 24)
+        const hours = Number(entry.hours);
+        // Incomplete tasks can legitimately have 0 actual hours. The DPR
+        // total is still required to be >0 and <=24. Positive entries must
+        // individually stay within the 24-hour daily limit.
+        if (!Number.isFinite(hours) || hours < 0 || hours > 24)
           throw new BadRequestException(
-            "DPR hours must be greater than 0 and no more than 24",
+            `Invalid DPR hours for "${entry.description}": ${entry.hours}. Each entry must be between 0 and 24 hours.`,
           );
         if (entry.todoId) {
           const todo = await tx.todo.findFirst({

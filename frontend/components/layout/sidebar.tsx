@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Users, Clock, ListChecks, FileText, CalendarDays, Settings2, BarChart3,
+  LayoutDashboard, Users, Clock, ListChecks, FileText, CalendarDays, Settings2, BarChart3, ClipboardList,
   BriefcaseBusiness, MessagesSquare, Target, ShieldAlert, FolderLock, UserCircle2, Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,6 +28,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/calendar', label: 'Company Calendar', icon: CalendarDays },
   { href: '/policies', label: 'Policies', icon: FileText },
   { href: '/documents', label: 'Documents', icon: FolderLock },
+  { href: '/activity-monitor', label: 'Daily Activity', icon: ClipboardList, roles: ['HR_ADMIN', 'SUPER_ADMIN'] },
   { href: '/reports', label: 'Reports', icon: BarChart3, roles: ['HR_ADMIN', 'LEADERSHIP', 'SUPER_ADMIN'] },
   { href: '/kra', label: 'KRA', icon: Target, roles: ['EMPLOYEE', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'] },
   { href: '/strikes', label: '3-Strike', icon: ShieldAlert, roles: ['EMPLOYEE', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'] },

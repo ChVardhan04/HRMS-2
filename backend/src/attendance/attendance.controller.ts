@@ -98,6 +98,21 @@ export class AttendanceController {
     );
   }
 
+  @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Patch("regularise/:recordId/reject")
+  rejectRegularisation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("recordId") recordId: string,
+    @Body("reason") reason?: string,
+  ) {
+    return this.attendanceService.rejectRegularisation(
+      recordId,
+      user.employeeId!,
+      user.roles,
+      reason,
+    );
+  }
+
   @Get("team-today")
   teamToday(@CurrentUser() user: AuthenticatedUser) {
     return this.attendanceService.teamAttendanceToday(

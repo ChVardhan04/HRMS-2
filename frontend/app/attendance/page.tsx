@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 
 export default function AttendancePage() {
@@ -147,6 +148,21 @@ export default function AttendancePage() {
   });
 
   // ---------------------------------------------------------
+  // Reject regularisation
+  // ---------------------------------------------------------
+  const reject = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      api.patch(`/attendance/regularise/${id}/reject`, { reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['attendance', 'regularise', 'pending'] });
+      toast({ title: 'Regularisation rejected', variant: 'success' });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Could not reject regularisation', description: error?.message || 'Please try again.', variant: 'destructive' });
+    },
+  });
+
+  // ---------------------------------------------------------
   // My attendance history
   // ---------------------------------------------------------
   const { data: history } = useQuery({
@@ -168,6 +184,18 @@ export default function AttendancePage() {
     queryKey: ['attendance','monthly','team',reportMonth],
     queryFn: () => api.get<any>(`/attendance/monthly/team?month=${reportMonthNo}&year=${reportYear}`),
     enabled: isManagerOrAbove && hasRole('HR_ADMIN','SUPER_ADMIN'),
+  });
+
+  const [historyEmployeeId, setHistoryEmployeeId] = useState('all');
+  const { data: historyEmployees } = useQuery({
+    queryKey: ['employees', 'attendance-history'],
+    queryFn: () => api.get<any>('/employees?pageSize=200&page=1&includeExited=false'),
+    enabled: hasRole('HR_ADMIN','SUPER_ADMIN'),
+  });
+  const { data: dailyAttendance } = useQuery({
+    queryKey: ['reports','daily-attendance',reportMonth,historyEmployeeId],
+    queryFn: () => api.get<any>(`/reports/daily-attendance?month=${reportMonthNo}&year=${reportYear}${historyEmployeeId !== 'all' ? `&employeeId=${historyEmployeeId}` : ''}`),
+    enabled: hasRole('HR_ADMIN','SUPER_ADMIN'),
   });
 
   return (
@@ -211,6 +239,45 @@ export default function AttendancePage() {
           <Card>
             <CardHeader><CardTitle>Monthly attendance by employee</CardTitle></CardHeader>
             <CardContent>{!monthlyTeam?.rows?.length ? <p className="text-sm text-muted-foreground">No employee attendance data for this month.</p> : <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Department</TableHead><TableHead>Worked</TableHead><TableHead>Total working</TableHead><TableHead>Late</TableHead><TableHead>Deduction</TableHead><TableHead>Rate</TableHead></TableRow></TableHeader><TableBody>{monthlyTeam.rows.map((r:any)=><TableRow key={r.employee.id}><TableCell><p className="font-medium">{r.employee.firstName} {r.employee.lastName}</p><p className="text-xs text-muted-foreground">{r.employee.employeeCode}</p></TableCell><TableCell>{r.employee.department?.name ?? '-'}</TableCell><TableCell>{r.workedDays}</TableCell><TableCell>{r.totalWorkingDays}</TableCell><TableCell>{r.lateCount}</TableCell><TableCell>{r.latePenaltyDays ? <span className="inline-flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5"/>{r.latePenaltyDays} day</span> : '0'}</TableCell><TableCell>{r.attendanceRate}%</TableCell></TableRow>)}</TableBody></Table></div>}</CardContent>
+          </Card>
+        )}
+
+        {hasRole('HR_ADMIN','SUPER_ADMIN') && (
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <CardTitle>Employee attendance history</CardTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">See every employee's attendance day by day for the selected month.</p>
+                </div>
+                <Select value={historyEmployeeId} onValueChange={setHistoryEmployeeId}>
+                  <SelectTrigger className="w-full md:w-72"><SelectValue placeholder="All employees" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All employees</SelectItem>
+                    {historyEmployees?.data?.map((e:any) => <SelectItem key={e.id} value={e.id}>{e.firstName} {e.lastName} · {e.employeeCode}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!dailyAttendance?.rows?.length ? <p className="text-sm text-muted-foreground">No attendance records for this month.</p> : (
+                <div className="max-h-[520px] overflow-auto">
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Employee</TableHead><TableHead>Status</TableHead><TableHead>Check-in</TableHead><TableHead>Check-out</TableHead><TableHead>Hours</TableHead><TableHead>DPR</TableHead><TableHead>To-Dos</TableHead></TableRow></TableHeader>
+                    <TableBody>{dailyAttendance.rows.map((r:any) => <TableRow key={`${r.employee.id}-${r.date}`}>
+                      <TableCell>{r.date}</TableCell>
+                      <TableCell><p className="font-medium">{r.employee.firstName} {r.employee.lastName}</p><p className="text-xs text-muted-foreground">{r.employee.employeeCode}</p></TableCell>
+                      <TableCell><StatusBadge status={r.status} /></TableCell>
+                      <TableCell>{r.checkInAt ? formatDateTime(r.checkInAt) : '-'}</TableCell>
+                      <TableCell>{r.checkOutAt ? formatDateTime(r.checkOutAt) : '-'}</TableCell>
+                      <TableCell>{r.workingHours != null ? Number(r.workingHours).toFixed(2) : '-'}</TableCell>
+                      <TableCell><StatusBadge status={r.dprStatus} /></TableCell>
+                      <TableCell>{r.todoResolved}/{r.todoTotal}{r.todoPending ? <span className="ml-1 text-xs text-muted-foreground">({r.todoPending} pending)</span> : null}</TableCell>
+                    </TableRow>)}</TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
           </Card>
         )}
 
@@ -456,17 +523,21 @@ export default function AttendancePage() {
                           </div>
 
                           {/* Action */}
-                          <div className="flex justify-end border-t pt-3">
+                          <div className="flex justify-end gap-2 border-t pt-3">
                             <Button
                               size="sm"
-                              onClick={() =>
-                                approve.mutate(r.id)
-                              }
-                              disabled={approve.isPending}
+                              variant="outline"
+                              onClick={() => reject.mutate({ id: r.id })}
+                              disabled={reject.isPending || approve.isPending}
                             >
-                              {approve.isPending
-                                ? 'Approving...'
-                                : 'Approve'}
+                              {reject.isPending ? 'Rejecting...' : 'Reject'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => approve.mutate(r.id)}
+                              disabled={approve.isPending || reject.isPending}
+                            >
+                              {approve.isPending ? 'Approving...' : 'Approve'}
                             </Button>
                           </div>
                         </div>

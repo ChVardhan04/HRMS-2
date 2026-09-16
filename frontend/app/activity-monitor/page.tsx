@@ -1,81 +1,96 @@
 'use client';
 
-import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { AppShell } from '@/components/layout/app-shell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { EmptyState } from '@/components/shared/empty-state';
 import { api } from '@/lib/api-client';
-import { ClipboardList, Clock3, FileText, ListChecks, UserRound } from 'lucide-react';
+import { useAuthStore } from '@/lib/auth-store';
+import { getTodoProof } from '@/features/todos/use-todos';
+import { CalendarDays, ChevronDown, ChevronUp, ClipboardList, Eye, FileText, Users } from 'lucide-react';
 
-function fmtTime(value: string | null) {
-  return value ? new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '-';
-}
-
-async function openProof(taskId: string) {
-  const result = await api.get<any>(`/todos/${taskId}/proof`);
-  window.open(result.url, '_blank', 'noopener,noreferrer');
+function statusVariant(status?: string) {
+  if (status === 'APPROVED' || status === 'SUBMITTED' || status === 'COMPLETED' || status === 'PRESENT') return 'success' as const;
+  if (status === 'ABSENT' || status === 'REJECTED' || status === 'INCOMPLETE') return 'destructive' as const;
+  return 'outline' as const;
 }
 
 export default function ActivityMonitorPage() {
-  const initialDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
-  const [date, setDate] = useState(initialDate);
-  const [employeeId, setEmployeeId] = useState('all');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const isHr = useAuthStore((s) => s.hasRole('HR_ADMIN', 'SUPER_ADMIN'));
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [employeeId, setEmployeeId] = useState('ALL');
+  const [expanded, setExpanded] = useState<string | null>(null);
 
-  const { data: employees } = useQuery({
-    queryKey: ['employees', 'activity-monitor'],
-    queryFn: () => api.get<any>('/employees?pageSize=200&page=1&includeExited=false'),
-  });
-  const { data, isFetching } = useQuery({
-    queryKey: ['reports', 'daily-activity', date, employeeId],
-    queryFn: () => api.get<any>(`/reports/daily-activity?date=${date}${employeeId !== 'all' ? `&employeeId=${employeeId}` : ''}`),
+  const { data, isLoading } = useQuery({
+    queryKey: ['daily-activity', date, employeeId],
+    queryFn: () => api.get<any>(`/reports/daily-activity?date=${date}${employeeId !== 'ALL' ? `&employeeId=${employeeId}` : ''}`),
+    enabled: isHr,
+    refetchInterval: 60000,
   });
 
   const rows = data?.rows ?? [];
-  const selected = rows.find((r: any) => r.employee.id === selectedId) ?? null;
-  const summary = useMemo(() => ({
-    submitted: rows.filter((r: any) => ['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'].includes(r.dpr?.status)).length,
-    missing: rows.filter((r: any) => !['SUBMITTED', 'UNDER_REVIEW', 'APPROVED'].includes(r.dpr?.status ?? '')).length,
-    present: rows.filter((r: any) => ['PRESENT', 'LATE', 'HALF_DAY', 'WORK_FROM_HOME'].includes(r.attendance.status)).length,
-  }), [rows]);
+  const selected = useMemo(() => rows.find((r: any) => r.employee.id === employeeId), [rows, employeeId]);
+
+  async function openProof(task: any) {
+    const result = await getTodoProof(task.id);
+    window.open(result.url, '_blank', 'noopener,noreferrer');
+  }
+
+  if (!isHr) return null;
 
   return (
     <AppShell title="Daily Activity">
       <div className="mx-auto w-full max-w-7xl space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /> Employee daily activity</CardTitle>
-            <p className="text-xs text-muted-foreground">Select a day and employee to see attendance, DPR submission and all To-Do activity in one place.</p>
+            <CardTitle className="flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /> Daily employee activity</CardTitle>
+            <p className="text-xs text-muted-foreground">Check attendance, DPR submission and To-Do work for every employee on any day.</p>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-3 md:flex-row md:items-end">
-              <div><label className="text-xs text-muted-foreground">Date</label><Input type="date" value={date} onChange={e => { setDate(e.target.value); setSelectedId(null); }} /></div>
-              <div className="min-w-[240px]"><label className="text-xs text-muted-foreground">Employee</label><Select value={employeeId} onValueChange={v => { setEmployeeId(v); setSelectedId(null); }}><SelectTrigger><SelectValue placeholder="All employees" /></SelectTrigger><SelectContent><SelectItem value="all">All employees</SelectItem>{employees?.data?.map((e: any) => <SelectItem key={e.id} value={e.id}>{e.firstName} {e.lastName} · {e.employeeCode}</SelectItem>)}</SelectContent></Select></div>
-              <div className="flex flex-wrap gap-2"><Badge variant="outline">Present {summary.present}</Badge><Badge variant="success">DPR submitted {summary.submitted}</Badge><Badge variant="destructive">DPR missing {summary.missing}</Badge></div>
+            <div className="grid gap-3 md:grid-cols-[180px_1fr]">
+              <div><label className="mb-1 block text-xs text-muted-foreground">Date</label><Input type="date" value={date} onChange={(e) => { setDate(e.target.value); setExpanded(null); }} /></div>
+              <div><label className="mb-1 block text-xs text-muted-foreground">Employee</label><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={employeeId} onChange={(e) => { setEmployeeId(e.target.value); setExpanded(null); }}><option value="ALL">All employees</option>{rows.map((r:any)=><option key={r.employee.id} value={r.employee.id}>{r.employee.firstName} {r.employee.lastName} · {r.employee.employeeCode}</option>)}</select></div>
             </div>
           </CardContent>
         </Card>
 
-        {isFetching ? <div className="h-48 animate-pulse rounded-md bg-muted" /> : !rows.length ? <EmptyState icon={UserRound} title="No employees found" /> : (
+        {isLoading ? <Card><CardContent className="h-48 animate-pulse rounded-md bg-muted" /></Card> : (
           <Card>
-            <CardHeader><CardTitle>Employees</CardTitle></CardHeader>
-            <CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="px-2 py-2">Employee</th><th className="px-2 py-2">Attendance</th><th className="px-2 py-2">Check-in/out</th><th className="px-2 py-2">DPR</th><th className="px-2 py-2">To-Dos</th><th className="px-2 py-2">Action</th></tr></thead><tbody>{rows.map((r: any) => <tr key={r.employee.id} className="border-b last:border-0"><td className="px-2 py-3"><p className="font-medium">{r.employee.firstName} {r.employee.lastName}</p><p className="text-xs text-muted-foreground">{r.employee.employeeCode} · {r.employee.department?.name ?? 'No department'}</p></td><td className="px-2 py-3"><StatusBadge status={r.attendance.status} /></td><td className="px-2 py-3">{fmtTime(r.attendance.checkInAt)} / {fmtTime(r.attendance.checkOutAt)}<p className="text-xs text-muted-foreground">{r.attendance.workingHours != null ? `${Number(r.attendance.workingHours).toFixed(2)}h` : '-'}</p></td><td className="px-2 py-3"><StatusBadge status={r.dpr?.status ?? 'DRAFT'} />{r.dpr?.submittedAt && <p className="text-xs text-muted-foreground">Submitted {fmtTime(r.dpr.submittedAt)}</p>}</td><td className="px-2 py-3">{r.tasks.resolved}/{r.tasks.total}<p className="text-xs text-muted-foreground">{r.tasks.pending} pending</p></td><td className="px-2 py-3"><Button size="sm" variant="outline" onClick={() => setSelectedId(r.employee.id)}>View details</Button></td></tr>)}</tbody></table></div></CardContent>
+            <CardHeader><CardTitle>{date} · Employee activity</CardTitle></CardHeader>
+            <CardContent>
+              {!rows.length ? <p className="text-sm text-muted-foreground">No employees found.</p> : <div className="space-y-3">
+                {rows.map((row:any) => {
+                  const open = expanded === row.employee.id;
+                  return <div key={row.employee.id} className="rounded-xl border">
+                    <button className="w-full p-4 text-left" onClick={() => setExpanded(open ? null : row.employee.id)}>
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex items-center gap-3"><Users className="h-4 w-4 text-primary" /><div><p className="font-medium">{row.employee.firstName} {row.employee.lastName}</p><p className="text-xs text-muted-foreground">{row.employee.employeeCode} · {row.employee.department?.name ?? 'No department'} · {row.employee.designation?.title ?? 'No designation'}</p></div></div>
+                        <div className="flex flex-wrap items-center gap-2"><Badge variant={statusVariant(row.attendance?.status)}>{row.attendance?.status ?? 'No attendance record'}</Badge><Badge variant={row.dpr ? statusVariant(row.dpr.status) : 'destructive'}>DPR: {row.dpr?.status ?? 'NOT SUBMITTED'}</Badge><Badge variant="outline">To-Dos: {row.todoSummary.total}</Badge><Badge variant="outline">Resolved: {row.todoSummary.resolved}</Badge>{open ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}</div>
+                      </div>
+                    </button>
+                    {open && <div className="border-t p-4 space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <Info label="Check-in" value={row.attendance?.checkInAt ? new Date(row.attendance.checkInAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '-'} />
+                        <Info label="Check-out" value={row.attendance?.checkOutAt ? new Date(row.attendance.checkOutAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '-'} />
+                        <Info label="Working hours" value={row.attendance?.workingHours != null ? `${Number(row.attendance.workingHours).toFixed(2)}h` : '-'} />
+                        <Info label="DPR hours" value={row.dpr ? `${Number(row.dpr.totalHours).toFixed(2)}h` : '-'} />
+                        <Info label="DPR submitted" value={row.dpr?.submittedAt ? new Date(row.dpr.submittedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : 'No'} />
+                      </div>
+                      <section><h3 className="mb-2 flex items-center gap-2 font-semibold"><ClipboardList className="h-4 w-4"/> To-Dos</h3>{!row.todos.length ? <p className="text-sm text-muted-foreground">No To-Dos for this day.</p> : <div className="space-y-2">{row.todos.map((task:any)=><div key={task.id} className="rounded-lg bg-muted/40 p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="font-medium">{task.title}</p><div className="flex flex-wrap gap-2"><Badge variant={statusVariant(task.eodStatus)}>{task.eodStatus}</Badge>{task.aiCompletionPercent != null && <Badge variant="outline">AI {Number(task.aiCompletionPercent).toFixed(0)}%</Badge>}</div></div>{task.completionOutputSummary && <p className="mt-1 text-sm">Output: {task.completionOutputSummary}</p>}{task.incompleteReason && <p className="mt-1 text-sm text-amber-700">Reason: {task.incompleteReason}</p>}{task.completionProofFileName && <Button size="sm" variant="ghost" className="mt-1" onClick={() => openProof(task)}><Eye className="mr-1 h-3.5 w-3.5"/> View proof</Button>}</div>)}</div>}</section>
+                      <section><h3 className="mb-2 flex items-center gap-2 font-semibold"><FileText className="h-4 w-4"/> DPR</h3>{!row.dpr ? <p className="text-sm text-muted-foreground">DPR not submitted/created for this day.</p> : <div className="space-y-2">{row.dpr.entries.map((entry:any)=><div key={entry.id} className="rounded-lg border p-3"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><p className="font-medium">{entry.description}</p><span className="text-xs text-muted-foreground">{Number(entry.hours).toFixed(1)}h</span></div><p className="mt-1 text-sm">{entry.output || 'No output recorded.'}</p>{entry.blocker && <p className="mt-1 text-xs text-amber-700">Blocker: {entry.blocker}</p>}</div>)}<div className="flex flex-wrap gap-2 text-xs text-muted-foreground"><span>Status: {row.dpr.status}</span><span>Quality: {row.dpr.qualityScore ?? '-'}</span><span>AI completion: {row.dpr.aiCompletionPercent ?? 'Pending'}%</span></div>{row.dpr.reviewComment && <p className="rounded-md bg-muted/40 p-2 text-sm">Manager review: {row.dpr.reviewComment}</p>}</div>}</section>
+                    </div>}
+                  </div>;
+                })}
+              </div>}
+            </CardContent>
           </Card>
         )}
-
-        {selected && <Card><CardHeader><div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><div><CardTitle>{selected.employee.firstName} {selected.employee.lastName}</CardTitle><p className="text-xs text-muted-foreground">{date} · {selected.employee.employeeCode}</p></div><Button variant="outline" onClick={() => setSelectedId(null)}>Close</Button></div></CardHeader><CardContent className="space-y-5">
-          <div className="grid gap-3 md:grid-cols-4"><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Attendance</p><StatusBadge status={selected.attendance.status} /></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">DPR</p><StatusBadge status={selected.dpr?.status ?? 'DRAFT'} /></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">Tasks</p><p className="font-semibold">{selected.tasks.resolved}/{selected.tasks.total} resolved</p></div><div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">AI task score</p><p className="font-semibold">{selected.dpr?.aiCompletionPercent == null ? '-' : `${selected.dpr.aiCompletionPercent}%`}</p></div></div>
-          <section><h3 className="mb-2 flex items-center gap-2 font-semibold"><ListChecks className="h-4 w-4" /> To-Dos</h3>{!selected.tasks.items.length ? <p className="text-sm text-muted-foreground">No To-Dos for this day.</p> : <div className="space-y-2">{selected.tasks.items.map((t: any) => <div key={t.id} className="rounded-lg border p-3"><div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><p className="font-medium">{t.title}</p><div className="flex gap-2"><Badge variant={t.eodStatus === 'COMPLETED' ? 'success' : t.eodStatus === 'INCOMPLETE' ? 'muted' : 'destructive'}>{t.eodStatus}</Badge>{t.aiCompletionPercent != null && <Badge variant="outline">AI {Number(t.aiCompletionPercent).toFixed(0)}%</Badge>}</div></div>{t.actualHours != null && <p className="mt-1 text-xs text-muted-foreground">Actual hours: {Number(t.actualHours).toFixed(2)}h</p>}{t.completionOutputSummary && <p className="mt-1 text-sm">{t.completionOutputSummary}</p>}{t.incompleteReason && <p className="mt-1 text-xs text-muted-foreground">Reason: {t.incompleteReason}</p>}{t.completionProofFileName && <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><span>Proof: {t.completionProofFileName}</span><Button size="sm" variant="ghost" onClick={() => openProof(t.id).catch(() => undefined)}>View proof</Button></div>}</div>)}</div>}</section>
-          <section><h3 className="mb-2 flex items-center gap-2 font-semibold"><FileText className="h-4 w-4" /> DPR submission</h3>{!selected.dpr ? <p className="text-sm text-muted-foreground">No DPR created for this day.</p> : <div className="space-y-2"><div className="rounded-lg bg-muted/40 p-3 text-sm">Submitted: {selected.dpr.submittedAt ? fmtTime(selected.dpr.submittedAt) : 'Not submitted'}{selected.dpr.qualityScore != null ? ` · Quality ${Number(selected.dpr.qualityScore).toFixed(1)}/10` : ''}</div>{selected.dpr.entries.map((e: any) => <div key={e.id} className="rounded-lg border p-3"><div className="flex justify-between gap-3"><p className="font-medium">{e.description}</p><Badge variant="outline">{Number(e.hours).toFixed(2)}h</Badge></div>{e.output && <p className="mt-1 text-sm">{e.output}</p>}{e.blocker && <p className="mt-1 text-xs text-muted-foreground">Blocker: {e.blocker}</p>}{e.tomorrowPlan && <p className="mt-1 text-xs text-muted-foreground">Tomorrow: {e.tomorrowPlan}</p>}</div>)}</div>}</section>
-          <section><h3 className="mb-2 flex items-center gap-2 font-semibold"><Clock3 className="h-4 w-4" /> Attendance events</h3>{!selected.attendanceRecords.length ? <p className="text-sm text-muted-foreground">No attendance events recorded.</p> : <div className="space-y-1">{selected.attendanceRecords.map((a: any) => <p key={a.id} className="text-sm">{a.type.replaceAll('_',' ')} · {fmtTime(a.timestamp)}{a.note ? ` · ${a.note}` : ''}</p>)}</div>}</section>
-        </CardContent></Card>}
       </div>
     </AppShell>
   );
 }
+
+function Info({label,value}:{label:string;value:string}) { return <div className="rounded-lg bg-muted/40 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>; }

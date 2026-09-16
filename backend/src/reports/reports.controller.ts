@@ -21,23 +21,6 @@ export class ReportsController {
     return this.reportsService.employeeReport();
   }
 
-  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
-  @Get("daily-activity")
-  dailyActivity(@Query("date") date: string, @Query("employeeId") employeeId?: string) {
-    return this.reportsService.dailyActivity(date || new Date().toISOString().slice(0, 10), employeeId);
-  }
-
-  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
-  @Get("daily-attendance")
-  dailyAttendance(@Query("month") month: string, @Query("year") year: string, @Query("employeeId") employeeId?: string) {
-    const now = new Date();
-    return this.reportsService.dailyAttendance(
-      Number(month) || now.getMonth() + 1,
-      Number(year) || now.getFullYear(),
-      employeeId,
-    );
-  }
-
   @Get("pay-attendance")
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   payAttendance(@Query("month") month: string, @Query("year") year: string) {
@@ -46,6 +29,13 @@ export class ReportsController {
       Number(month) || now.getMonth() + 1,
       Number(year) || now.getFullYear(),
     );
+  }
+
+  @Get("daily-activity")
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  dailyActivity(@Query("date") date: string, @Query("employeeId") employeeId?: string) {
+    const target = date || new Date().toISOString().slice(0, 10);
+    return this.reportsService.dailyActivityReport(target, employeeId);
   }
 
   @Get("attendance")

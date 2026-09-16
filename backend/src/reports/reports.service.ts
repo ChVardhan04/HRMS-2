@@ -78,6 +78,78 @@ export class ReportsService {
     });
   }
 
+  async dailyActivityReport(dateInput: string, employeeId?: string) {
+    const date = new Date(`${dateInput}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime())) throw new BadRequestException("Invalid date");
+    const next = new Date(date.getTime() + 86400000);
+
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        deletedAt: null,
+        employmentStatus: { not: "EXITED" },
+        ...(employeeId ? { id: employeeId } : {}),
+      },
+      select: {
+        id: true, employeeCode: true, firstName: true, lastName: true,
+        department: { select: { id: true, name: true } },
+        designation: { select: { id: true, title: true } },
+      },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    });
+
+    const workDays = await this.prisma.workDay.findMany({
+      where: { date: { gte: date, lt: next }, ...(employeeId ? { employeeId } : {}) },
+      include: {
+        attendanceRecords: { orderBy: { timestamp: "asc" } },
+        todos: { orderBy: { createdAt: "asc" } },
+        dpr: {
+          include: {
+            entries: { include: { todo: true }, orderBy: { createdAt: "asc" } },
+            auditTrail: { orderBy: { createdAt: "asc" } },
+          },
+        },
+      },
+    });
+    const byEmployee = new Map(workDays.map((row) => [row.employeeId, row]));
+
+    return {
+      date: dateInput,
+      rows: employees.map((employee) => {
+        const wd: any = byEmployee.get(employee.id);
+        const todos = wd?.todos ?? [];
+        const dpr = wd?.dpr ?? null;
+        const aiValues = todos.filter((t: any) => t.aiCompletionPercent != null).map((t: any) => Number(t.aiCompletionPercent));
+        const resolved = todos.filter((t: any) => t.eodStatus !== "PENDING").length;
+        const dprHours = dpr?.entries?.reduce((sum: number, e: any) => sum + Number(e.hours || 0), 0) ?? 0;
+        return {
+          employee,
+          attendance: wd ? {
+            status: wd.attendanceStatus,
+            checkInAt: wd.checkInAt,
+            checkOutAt: wd.checkOutAt,
+            workingHours: wd.workingHours,
+            isLate: wd.isLate,
+            isEarlyDeparture: wd.isEarlyDeparture,
+          } : null,
+          dpr: dpr ? {
+            id: dpr.id,
+            status: dpr.status,
+            submittedAt: dpr.submittedAt,
+            reviewedAt: dpr.reviewedAt,
+            reviewComment: dpr.reviewComment,
+            qualityScore: dpr.qualityScore,
+            totalHours: Number(dprHours.toFixed(2)),
+            aiCompletionPercent: aiValues.length ? Number((aiValues.reduce((a: number,b: number)=>a+b,0)/aiValues.length).toFixed(1)) : null,
+            entries: dpr.entries,
+            auditTrail: dpr.auditTrail,
+          } : null,
+          todos,
+          todoSummary: { total: todos.length, resolved, pending: todos.length - resolved },
+        };
+      }),
+    };
+  }
+
   async attendanceReport(month: number, year: number) {
     const calendar = await this.calendarService.workingDaySummary(month, year);
     const start = new Date(Date.UTC(year, month - 1, 1));
@@ -212,192 +284,6 @@ export class ReportsService {
             : null,
       };
     });
-  }
-
-  async dailyActivity(dateKey: string, employeeId?: string) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
-      throw new BadRequestException("Date must be in YYYY-MM-DD format");
-    }
-    const start = new Date(`${dateKey}T00:00:00.000Z`);
-    const end = new Date(start.getTime() + 86400000);
-
-    const employees = await this.prisma.employee.findMany({
-      where: {
-        deletedAt: null,
-        employmentStatus: { not: "EXITED" },
-        ...(employeeId ? { id: employeeId } : {}),
-      },
-      select: {
-        id: true,
-        employeeCode: true,
-        firstName: true,
-        lastName: true,
-        department: { select: { name: true } },
-        designation: { select: { title: true } },
-      },
-      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-    });
-
-    const [workDays, approvedLeaves] = await Promise.all([
-      this.prisma.workDay.findMany({
-        where: { employeeId: { in: employees.map((e) => e.id) }, date: { gte: start, lt: end } },
-        include: {
-          attendanceRecords: true,
-          todos: { orderBy: { createdAt: "asc" } },
-          dpr: { include: { entries: { include: { todo: true }, orderBy: { createdAt: "asc" } } } },
-        },
-      }),
-      this.prisma.leaveRequest.findMany({
-        where: { employeeId: { in: employees.map((e) => e.id) }, status: "APPROVED", startDate: { lt: end }, endDate: { gte: start } },
-      }),
-    ]);
-    const byEmployee = new Map(workDays.map((w) => [w.employeeId, w]));
-    const onLeave = new Set(approvedLeaves.map((leave) => leave.employeeId));
-    const calendarStates = new Map(
-      await Promise.all(
-        employees.map(async (employee) => [
-          employee.id,
-          await this.calendarService.isWorkingDayForEmployee(employee.id, start),
-        ] as const),
-      ),
-    );
-
-    return {
-      date: dateKey,
-      rows: employees.map((employee) => {
-        const workDay: any = byEmployee.get(employee.id);
-        const calendarState: any = calendarStates.get(employee.id);
-        const inferredStatus = !calendarState?.working
-          ? calendarState?.type === "HOLIDAY" ? "HOLIDAY" : "WEEKEND"
-          : onLeave.has(employee.id) ? "ON_LEAVE" : "ABSENT";
-        const tasks = workDay?.todos ?? [];
-        const resolvedTasks = tasks.filter((t: any) => t.eodStatus !== "PENDING");
-        const aiValues = tasks
-          .filter((t: any) => t.aiCompletionPercent != null)
-          .map((t: any) => Number(t.aiCompletionPercent));
-        return {
-          employee,
-          workDayId: workDay?.id ?? null,
-          attendance: workDay
-            ? {
-                status: workDay.attendanceStatus,
-                checkInAt: workDay.checkInAt,
-                checkOutAt: workDay.checkOutAt,
-                workingHours: workDay.workingHours,
-                isLate: workDay.isLate,
-                isEarlyDeparture: workDay.isEarlyDeparture,
-              }
-            : {
-                status: inferredStatus,
-                checkInAt: null,
-                checkOutAt: null,
-                workingHours: null,
-                isLate: false,
-                isEarlyDeparture: false,
-              },
-          dpr: workDay?.dpr
-            ? {
-                id: workDay.dpr.id,
-                status: workDay.dpr.status,
-                submittedAt: workDay.dpr.submittedAt,
-                reviewedAt: workDay.dpr.reviewedAt,
-                reviewComment: workDay.dpr.reviewComment,
-                qualityScore: workDay.dpr.qualityScore,
-                aiCompletionPercent: aiValues.length
-                  ? Number((aiValues.reduce((a, b) => a + b, 0) / aiValues.length).toFixed(1))
-                  : null,
-                entries: workDay.dpr.entries,
-              }
-            : null,
-          tasks: {
-            total: tasks.length,
-            resolved: resolvedTasks.length,
-            pending: tasks.length - resolvedTasks.length,
-            items: tasks,
-          },
-          attendanceRecords: workDay?.attendanceRecords ?? [],
-        };
-      }),
-    };
-  }
-
-  async dailyAttendance(month: number, year: number, employeeId?: string) {
-    const calendar = await this.calendarService.workingDaySummary(month, year);
-    const employees = await this.prisma.employee.findMany({
-      where: {
-        deletedAt: null,
-        employmentStatus: { not: "EXITED" },
-        ...(employeeId ? { id: employeeId } : {}),
-      },
-      select: {
-        id: true,
-        employeeCode: true,
-        firstName: true,
-        lastName: true,
-        dateOfJoining: true,
-        exitDate: true,
-        department: { select: { name: true } },
-        designation: { select: { title: true } },
-      },
-      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-    });
-    const start = new Date(Date.UTC(year, month - 1, 1));
-    const end = new Date(Date.UTC(year, month, 1));
-    const workDays = await this.prisma.workDay.findMany({
-      where: { employeeId: { in: employees.map((e) => e.id) }, date: { gte: start, lt: end } },
-      include: { dpr: true, todos: true },
-    });
-    const leaves = await this.prisma.leaveRequest.findMany({
-      where: { status: "APPROVED", startDate: { lt: end }, endDate: { gte: start }, employeeId: { in: employees.map((e) => e.id) } },
-      include: { leaveType: true },
-    });
-    const leaveByKey = new Map<string, boolean>();
-    for (const leave of leaves) {
-      for (let d = new Date(leave.startDate); d <= leave.endDate; d.setUTCDate(d.getUTCDate() + 1)) {
-        leaveByKey.set(`${leave.employeeId}:${d.toISOString().slice(0, 10)}`, leave.leaveType.isPaid);
-      }
-    }
-    const workDayByKey = new Map(workDays.map((w) => [`${w.employeeId}:${w.date.toISOString().slice(0, 10)}`, w]));
-    const rows: any[] = [];
-    for (const employee of employees) {
-      for (const day of calendar.days as any[]) {
-        const key = day.date as string;
-        const doj = employee.dateOfJoining.toISOString().slice(0, 10);
-        const exit = employee.exitDate ? employee.exitDate.toISOString().slice(0, 10) : null;
-        if (key < doj || (exit && key > exit)) continue;
-        const wd: any = workDayByKey.get(`${employee.id}:${key}`);
-        const leave = leaveByKey.get(`${employee.id}:${key}`);
-        const status = !day.working
-          ? day.type === "HOLIDAY" ? "HOLIDAY" : "WEEKEND"
-          : leave != null
-            ? "ON_LEAVE"
-            : wd?.attendanceStatus ?? "ABSENT";
-        rows.push({
-          date: key,
-          employee: {
-            id: employee.id,
-            employeeCode: employee.employeeCode,
-            firstName: employee.firstName,
-            lastName: employee.lastName,
-            department: employee.department?.name ?? null,
-            designation: employee.designation?.title ?? null,
-          },
-          status,
-          leavePaid: leave ?? null,
-          checkInAt: wd?.checkInAt ?? null,
-          checkOutAt: wd?.checkOutAt ?? null,
-          workingHours: wd?.workingHours ?? null,
-          isLate: wd?.isLate ?? false,
-          isEarlyDeparture: wd?.isEarlyDeparture ?? false,
-          dprStatus: wd?.dpr?.status ?? (day.working && leave == null ? "DRAFT" : "APPROVED"),
-          dprSubmittedAt: wd?.dpr?.submittedAt ?? null,
-          todoTotal: wd?.todos?.length ?? 0,
-          todoResolved: wd?.todos?.filter((t: any) => t.eodStatus !== "PENDING").length ?? 0,
-          todoPending: wd?.todos?.filter((t: any) => t.eodStatus === "PENDING").length ?? 0,
-        });
-      }
-    }
-    return { month, year, rows };
   }
 
   async payAttendanceReport(month: number, year: number) {

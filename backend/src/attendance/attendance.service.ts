@@ -559,6 +559,37 @@ export class AttendanceService {
     });
   }
 
+  async rejectRegularisation(
+    recordId: string,
+    approverId: string,
+    roles: string[] = [],
+    reason?: string,
+  ) {
+    const record = await this.prisma.attendanceRecord.findUnique({
+      where: { id: recordId },
+      include: { workDay: { include: { employee: { select: { managerId: true } } } } },
+    });
+    if (!record || record.type !== "REGULARISATION" || record.approvedBy) {
+      throw new BadRequestException("Pending regularisation not found");
+    }
+    const isAdmin = roles.includes("HR_ADMIN") || roles.includes("SUPER_ADMIN");
+    if (!isAdmin && record.workDay.employee.managerId !== approverId) {
+      throw new BadRequestException("Only the reporting manager can reject this regularisation");
+    }
+    return this.prisma.attendanceRecord.update({
+      where: { id: recordId },
+      data: {
+        type: "REGULARISATION_REJECTED",
+        note: JSON.stringify({
+          ...(record.note ? JSON.parse(record.note) : {}),
+          rejectionReason: reason?.trim() || null,
+          rejectedBy: approverId,
+          rejectedAt: new Date().toISOString(),
+        }),
+      },
+    });
+  }
+
   async approveRegularisation(
     recordId: string,
     approverId: string,
@@ -787,43 +818,6 @@ export class AttendanceService {
       });
 
     return rows;
-  }
-
-  async rejectRegularisation(
-    recordId: string,
-    approverId: string,
-    roles: string[] = [],
-    reason?: string,
-  ) {
-    const record = await this.prisma.attendanceRecord.findUnique({
-      where: { id: recordId },
-      include: { workDay: { include: { employee: { select: { managerId: true } } } } },
-    });
-    if (!record) throw new BadRequestException("Regularisation record not found");
-    if (record.type !== "REGULARISATION") throw new BadRequestException("This is not a regularisation request");
-    if (record.approvedBy) throw new BadRequestException("This regularisation has already been decided");
-
-    const isAdmin = roles.includes("HR_ADMIN") || roles.includes("SUPER_ADMIN");
-    if (!isAdmin && record.workDay.employee.managerId !== approverId) {
-      throw new BadRequestException("Only the reporting manager can reject this regularisation");
-    }
-
-    let detail: any = {};
-    try { detail = JSON.parse(record.note ?? "{}"); } catch { detail = { reason: record.note }; }
-    detail.decision = "REJECTED";
-    detail.rejectedBy = approverId;
-    detail.rejectedAt = new Date().toISOString();
-    if (reason?.trim()) detail.rejectionReason = reason.trim();
-
-    return this.prisma.attendanceRecord.update({
-      where: { id: recordId },
-      data: {
-        // A decided request must leave the pending queue. The original
-        // attendance record is retained, and the decision is preserved in note.
-        approvedBy: approverId,
-        note: JSON.stringify(detail),
-      },
-    });
   }
 
   async monthlyReport(

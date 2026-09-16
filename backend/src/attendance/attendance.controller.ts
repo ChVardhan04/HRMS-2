@@ -86,18 +86,6 @@ export class AttendanceController {
   }
 
   @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
-  @Patch("regularise/:recordId/approve")
-  approveRegularisation(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param("recordId") recordId: string,
-  ) {
-    return this.attendanceService.approveRegularisation(
-      recordId,
-      user.employeeId!,
-      user.roles,
-    );
-  }
-
   @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Patch("regularise/:recordId/reject")
   rejectRegularisation(
@@ -110,6 +98,18 @@ export class AttendanceController {
       user.employeeId!,
       user.roles,
       reason,
+    );
+  }
+
+  @Patch("regularise/:recordId/approve")
+  approveRegularisation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("recordId") recordId: string,
+  ) {
+    return this.attendanceService.approveRegularisation(
+      recordId,
+      user.employeeId!,
+      user.roles,
     );
   }
 

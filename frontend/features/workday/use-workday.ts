@@ -10,7 +10,7 @@ export function useTodayWorkDay() {
 }
 
 export function useTeamToday() {
-  return useQuery({ queryKey: ['work-day', 'team-today'], queryFn: () => api.get<any[]>('/work-days/team-today') });
+  return useQuery({ queryKey: ['work-day', 'team-today'], queryFn: () => api.get<any[]>('/work-days/team-today'), refetchInterval: 60000 });
 }
 
 export function useCheckIn() {

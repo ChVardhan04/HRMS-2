@@ -43,3 +43,12 @@ export class RegularisationRequestDto {
   @IsString()
   requestedCheckOut?: string;
 }
+
+export class PortalHeartbeatDto {
+  @IsString()
+  sessionId: string;
+
+  @IsOptional()
+  @IsString()
+  clientTime?: string;
+}

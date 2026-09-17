@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -65,6 +66,14 @@ export class TodosController {
     @Body() dto: UpdateTodoDto,
   ) {
     return this.todosService.update(id, user.employeeId!, dto, user.roles);
+  }
+
+  @Delete(":id")
+  remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id") id: string,
+  ) {
+    return this.todosService.remove(id, user.employeeId!, user.roles);
   }
 
   @Patch(":id/complete")

@@ -48,6 +48,10 @@ export class UpdateTodoDto {
   description?: string;
 
   @IsOptional()
+  @IsString()
+  project?: string;
+
+  @IsOptional()
   @IsEnum(TodoPriority)
   priority?: TodoPriority;
 

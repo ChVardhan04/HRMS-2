@@ -20,6 +20,7 @@ import {
   CheckInDto,
   CheckOutDto,
   RegularisationRequestDto,
+  PortalHeartbeatDto,
 } from "./dto/attendance.dto";
 
 @Controller("attendance")
@@ -41,6 +42,16 @@ export class AttendanceController {
     @Req() req: Request,
   ) {
     return this.attendanceService.undoCheckIn(user.employeeId!, req.ip);
+  }
+
+  @Post("portal-heartbeat")
+  portalHeartbeat(@CurrentUser() user: AuthenticatedUser, @Body() dto: PortalHeartbeatDto) {
+    return this.attendanceService.portalHeartbeat(user.employeeId!, dto.sessionId);
+  }
+
+  @Get("portal-activity/today")
+  portalActivityToday(@CurrentUser() user: AuthenticatedUser, @Query("employeeId") employeeId?: string) {
+    return this.attendanceService.portalActivityToday(employeeId ?? user.employeeId!, user);
   }
 
   @Post("check-out")

@@ -179,6 +179,9 @@ export class TodosService {
       todo.creatorId !== requesterId
     )
       throw new ForbiddenException("Not allowed to modify this task");
+    if (todo.includedInDpr || todo.eodStatus !== TodoEodStatus.PENDING) {
+      throw new BadRequestException("This task is already resolved and cannot be edited. Keep the history in the DPR.");
+    }
     if (dto.status === TodoStatus.COMPLETED && todo.assigneeId !== requesterId)
       throw new ForbiddenException(
         "Only the assignee can complete a task so the DPR stays synchronized",
@@ -188,9 +191,26 @@ export class TodosService {
       where: { id },
       data: {
         ...dto,
+        project: dto.project !== undefined ? dto.project : undefined,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
       },
     });
+  }
+
+  async remove(id: string, requesterId: string, roles: string[] = []) {
+    const todo = await this.prisma.todo.findUnique({
+      where: { id },
+      select: { id: true, assigneeId: true, creatorId: true, eodStatus: true, includedInDpr: true, status: true },
+    });
+    if (!todo) throw new NotFoundException("Todo not found");
+    const isHr = roles.includes(RoleName.HR_ADMIN) || roles.includes(RoleName.SUPER_ADMIN);
+    if (!isHr && todo.assigneeId !== requesterId && todo.creatorId !== requesterId) {
+      throw new ForbiddenException("Not allowed to delete this task");
+    }
+    if (todo.includedInDpr || todo.eodStatus !== TodoEodStatus.PENDING) {
+      throw new BadRequestException("This task is already part of the EOD/DPR record and cannot be deleted. Keep the history and edit it instead.");
+    }
+    return this.prisma.todo.delete({ where: { id } });
   }
 
   /**

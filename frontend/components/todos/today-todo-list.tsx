@@ -9,6 +9,8 @@ import {
   Upload,
   AlertCircle,
   Eye,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,11 +33,14 @@ import {
   useTodayTodos,
   getTodoProof,
   useTodoEodStatus,
+  useUpdateTodo,
+  useDeleteTodo,
 } from '@/features/todos/use-todos';
 import { useTodayWorkDay } from '@/features/workday/use-workday';
 import { useAuthStore } from '@/lib/auth-store';
 import { api } from '@/lib/api-client';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export function TodayTodoList() {
   // Default todos to an empty array so TypeScript knows .map() is always safe.
@@ -45,6 +50,8 @@ export function TodayTodoList() {
   const { data: eod } = useTodoEodStatus();
   const createTodo = useCreateTodo();
   const resolveTodo = useResolveTodo();
+  const updateTodo = useUpdateTodo();
+  const deleteTodo = useDeleteTodo();
   const isManager = useAuthStore((s) => s.hasRole('MANAGER'));
   const { toast } = useToast();
 
@@ -55,12 +62,17 @@ export function TodayTodoList() {
   });
 
   const [newTitle, setNewTitle] = useState('');
+  const [newPriority, setNewPriority] = useState('MEDIUM');
   const [assigneeId, setAssigneeId] = useState('self');
   const [selected, setSelected] = useState<any | null>(null);
   const [hours, setHours] = useState('1');
   const [output, setOutput] = useState('');
   const [reason, setReason] = useState('');
   const [proof, setProof] = useState<File | undefined>();
+  const [editingTodo, setEditingTodo] = useState<any | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editPriority, setEditPriority] = useState('MEDIUM');
+  const [editDueDate, setEditDueDate] = useState('');
 
   const checkedIn = !!workDay?.checkInAt;
 
@@ -123,12 +135,13 @@ export function TodayTodoList() {
               createTodo.mutate(
                 {
                   title: newTitle.trim(),
+                  priority: newPriority as any,
                   dueDate: new Date().toISOString(),
                   assigneeId:
                     assigneeId === 'self' ? undefined : assigneeId,
                 },
                 {
-                  onSuccess: () => setNewTitle(''),
+                  onSuccess: () => { setNewTitle(''); setNewPriority('MEDIUM'); },
                 },
               );
             }}
@@ -152,6 +165,19 @@ export function TodayTodoList() {
               >
                 <Plus className="h-4 w-4" />
               </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Priority</Label>
+              <Select value={newPriority} onValueChange={setNewPriority}>
+                <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="LOW">Low</SelectItem>
+                  <SelectItem value="MEDIUM">Medium</SelectItem>
+                  <SelectItem value="HIGH">High</SelectItem>
+                  <SelectItem value="URGENT">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {isManager && (
@@ -243,6 +269,16 @@ export function TodayTodoList() {
                     </Button>
                   )}
 
+                  {todo.eodStatus === 'PENDING' && !todo.includedInDpr && (
+                    <>
+                      <Button size="icon" variant="ghost" title="Edit To-Do" onClick={() => { setEditingTodo(todo); setEditTitle(todo.title); setEditPriority(todo.priority ?? 'MEDIUM'); setEditDueDate(todo.dueDate ? new Date(todo.dueDate).toISOString().slice(0,16) : ''); }}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" title="Delete To-Do" onClick={() => { if (window.confirm('Delete this To-Do? This can only be done before it is resolved into the DPR.')) deleteTodo.mutate(todo.id); }}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
                   <Badge variant="outline">{todo.priority}</Badge>
                 </div>
               </div>
@@ -388,6 +424,18 @@ export function TodayTodoList() {
             </div>
           </div>
         )}
+
+        <Dialog open={Boolean(editingTodo)} onOpenChange={(open) => !open && setEditingTodo(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader><DialogTitle>Edit To-Do</DialogTitle></DialogHeader>
+            {editingTodo && <div className="space-y-4">
+              <div><Label>Task</Label><Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
+              <div><Label>Priority</Label><Select value={editPriority} onValueChange={setEditPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="LOW">Low</SelectItem><SelectItem value="MEDIUM">Medium</SelectItem><SelectItem value="HIGH">High</SelectItem><SelectItem value="URGENT">Urgent</SelectItem></SelectContent></Select></div>
+              <div><Label>Due date (optional)</Label><Input type="datetime-local" value={editDueDate} onChange={(e) => setEditDueDate(e.target.value)} /></div>
+            </div>}
+            <DialogFooter><Button variant="outline" onClick={() => setEditingTodo(null)}>Cancel</Button><Button disabled={updateTodo.isPending || !editTitle.trim()} onClick={() => updateTodo.mutate({ id: editingTodo.id, payload: { title: editTitle.trim(), priority: editPriority, dueDate: editDueDate ? new Date(editDueDate).toISOString() : undefined } }, { onSuccess: () => setEditingTodo(null) })}>{updateTodo.isPending ? 'Saving...' : 'Save changes'}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

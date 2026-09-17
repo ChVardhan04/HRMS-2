@@ -6,6 +6,7 @@ import { Sidebar } from './sidebar';
 import { Topnav } from './topnav';
 import { normalizeRoles, useAuthStore } from '@/lib/auth-store';
 import { api } from '@/lib/api-client';
+import { PortalActivityTracker } from '@/components/attendance/portal-activity-tracker';
 
 export function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
@@ -47,6 +48,7 @@ useEffect(() => {
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topnav title={title} />
+        <PortalActivityTracker />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
     </div>

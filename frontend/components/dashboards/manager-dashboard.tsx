@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertCircle, CalendarDays, Clock, Users } from 'lucide-react';
+import { PortalActivityTeamCard } from '@/components/attendance/portal-activity-team-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/shared/stat-card';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -28,6 +29,8 @@ export function ManagerDashboard() {
         <CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /> Leave approvals</CardTitle></CardHeader>
         <CardContent>{!leaveApprovals?.length ? <EmptyState icon={CalendarDays} title="No leave requests" /> : <div className="flex flex-col divide-y divide-border text-sm">{leaveApprovals.map((r: any) => <div key={r.id} className="flex items-center justify-between py-2"><span>{r.employee.firstName} {r.employee.lastName} · {r.leaveType.name}</span><StatusBadge status={r.status} /></div>)}</div>}</CardContent>
       </Card>
+
+      <PortalActivityTeamCard team={team} title="Team portal activity today" />
 
       <Card>
         <CardHeader>

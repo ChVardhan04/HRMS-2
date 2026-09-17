@@ -1,0 +1,4 @@
+ALTER TABLE "WorkDay" ADD COLUMN "portalActiveMinutes" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "WorkDay" ADD COLUMN "portalHeartbeatCount" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "WorkDay" ADD COLUMN "portalLastHeartbeatAt" TIMESTAMP(3);
+ALTER TABLE "WorkDay" ADD COLUMN "portalSessionId" TEXT;

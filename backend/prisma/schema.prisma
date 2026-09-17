@@ -530,6 +530,10 @@ model WorkDay {
   absenceNotifiedAt DateTime?
 
   totalLoggedHours  Decimal   @default(0) @db.Decimal(5, 2)
+  portalActiveMinutes Int @default(0)
+  portalHeartbeatCount Int @default(0)
+  portalLastHeartbeatAt DateTime?
+  portalSessionId String?
   dprStatus         DprStatus @default(DRAFT)
 
   attendanceRecords AttendanceRecord[]

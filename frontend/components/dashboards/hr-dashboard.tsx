@@ -18,6 +18,7 @@ import { StatCard } from '@/components/shared/stat-card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { useTeamToday } from '@/features/workday/use-workday';
+import { PortalActivityTeamCard } from '@/components/attendance/portal-activity-team-card';
 import { formatDateTime } from '@/lib/utils';
 
 export function HrDashboard() {
@@ -158,6 +159,8 @@ export function HrDashboard() {
           </Card>
         </Link>
       </div>
+
+      <PortalActivityTeamCard team={team} title="Employee portal activity today" />
 
       <Card>
         <CardHeader>

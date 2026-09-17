@@ -55,9 +55,7 @@ export function TodayTodoList() {
   });
 
   const [newTitle, setNewTitle] = useState('');
-  const [priority, setPriority] = useState('MEDIUM');
   const [assigneeId, setAssigneeId] = useState('self');
-
   const [selected, setSelected] = useState<any | null>(null);
   const [hours, setHours] = useState('1');
   const [output, setOutput] = useState('');
@@ -116,7 +114,7 @@ export function TodayTodoList() {
           </div>
         ) : (
           <form
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-2"
             onSubmit={(e) => {
               e.preventDefault();
 
@@ -125,27 +123,17 @@ export function TodayTodoList() {
               createTodo.mutate(
                 {
                   title: newTitle.trim(),
-                  priority,
                   dueDate: new Date().toISOString(),
                   assigneeId:
                     assigneeId === 'self' ? undefined : assigneeId,
                 },
                 {
-                  onSuccess: () => {
-                    setNewTitle('');
-                    setPriority('MEDIUM');
-                    setAssigneeId('self');
-                  },
+                  onSuccess: () => setNewTitle(''),
                 },
               );
             }}
           >
-            {/* Task */}
-            <div className="flex flex-col gap-2">
-              <Label className="text-xs text-muted-foreground">
-                Task
-              </Label>
-
+            <div className="flex gap-2">
               <Input
                 placeholder={
                   isManager
@@ -155,74 +143,43 @@ export function TodayTodoList() {
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
               />
-            </div>
 
-            {/* Priority + Assign To */}
-            <div className="grid gap-3 sm:grid-cols-2">
-              {/* Priority */}
-              <div className="flex flex-col gap-2">
-                <Label className="text-xs text-muted-foreground">
-                  Priority
-                </Label>
-
-                <Select
-                  value={priority}
-                  onValueChange={setPriority}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select priority" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    <SelectItem value="LOW">Low</SelectItem>
-                    <SelectItem value="MEDIUM">Medium</SelectItem>
-                    <SelectItem value="HIGH">High</SelectItem>
-                    <SelectItem value="URGENT">Urgent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Assign To - Managers Only */}
-              {isManager && (
-                <div className="flex flex-col gap-2">
-                  <Label className="text-xs text-muted-foreground">
-                    Assign to
-                  </Label>
-
-                  <Select
-                    value={assigneeId}
-                    onValueChange={setAssigneeId}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-
-                    <SelectContent>
-                      <SelectItem value="self">Myself</SelectItem>
-
-                      {team?.map((e: any) => (
-                        <SelectItem key={e.id} value={e.id}>
-                          {e.firstName} {e.lastName} · {e.employeeCode}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-
-            {/* Submit */}
-            <div className="flex justify-end">
               <Button
                 type="submit"
                 size="icon"
                 variant="secondary"
-                disabled={createTodo.isPending || !newTitle.trim()}
-                title="Add task"
+                disabled={createTodo.isPending}
               >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+
+            {isManager && (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">
+                  Assign to
+                </Label>
+
+                <Select
+                  value={assigneeId}
+                  onValueChange={setAssigneeId}
+                >
+                  <SelectTrigger className="w-full sm:w-72">
+                    <SelectValue />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    <SelectItem value="self">Myself</SelectItem>
+
+                    {team?.map((e: any) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.firstName} {e.lastName} · {e.employeeCode}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </form>
         )}
 

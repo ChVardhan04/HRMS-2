@@ -53,7 +53,7 @@ export class DprController {
     return this.dprService.teamStatus(user.employeeId!);
   }
 
-  @Roles(RoleName.MANAGER, RoleName.SUPER_ADMIN)
+  @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Patch(":dprId/approve")
   approve(
     @CurrentUser() user: AuthenticatedUser,
@@ -70,7 +70,7 @@ export class DprController {
     );
   }
 
-  @Roles(RoleName.MANAGER, RoleName.SUPER_ADMIN)
+  @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Patch(":dprId/reject")
   reject(
     @CurrentUser() user: AuthenticatedUser,
@@ -87,7 +87,7 @@ export class DprController {
     );
   }
 
-  @Roles(RoleName.MANAGER, RoleName.SUPER_ADMIN)
+  @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Patch(":dprId/request-changes")
   requestChanges(
     @CurrentUser() user: AuthenticatedUser,
@@ -102,6 +102,16 @@ export class DprController {
       dto.qualityScore,
       user.roles,
     );
+  }
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Patch(":dprId/hr-edit")
+  hrEdit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("dprId") dprId: string,
+    @Body() dto: SaveDprDraftDto,
+  ) {
+    return this.dprService.hrEdit(dprId, user.employeeId!, dto);
   }
 
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)

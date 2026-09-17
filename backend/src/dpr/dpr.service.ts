@@ -415,10 +415,12 @@ export class DprService {
       },
     });
     if (!dpr) throw new NotFoundException("DPR not found");
-    const isSuperAdmin = reviewerRoles.includes(RoleName.SUPER_ADMIN);
-    if (!isSuperAdmin && dpr.workDay.employee.managerId !== reviewerId) {
+    const isPrivilegedReviewer =
+      reviewerRoles.includes(RoleName.HR_ADMIN) ||
+      reviewerRoles.includes(RoleName.SUPER_ADMIN);
+    if (!isPrivilegedReviewer && dpr.workDay.employee.managerId !== reviewerId) {
       throw new BadRequestException(
-        "Only the reporting manager can review this DPR",
+        "Only the reporting manager or HR can review this DPR",
       );
     }
     if (
@@ -474,6 +476,92 @@ export class DprService {
     }
 
     return updated;
+  }
+
+  /** HR fallback review/edit path. HR can correct a submitted DPR when the reporting manager is unavailable. */
+  async hrEdit(
+    dprId: string,
+    actorId: string,
+    dto: SaveDprDraftDto,
+  ) {
+    const dpr = await this.prisma.dPR.findUnique({
+      where: { id: dprId },
+      include: { workDay: true },
+    });
+    if (!dpr) throw new NotFoundException("DPR not found");
+    if (dpr.lockedAt) {
+      throw new ForbiddenException("Approved DPRs are locked and cannot be edited here.");
+    }
+
+    const totalHours = dto.entries.reduce(
+      (sum, entry) => sum + Number(entry.hours || 0),
+      0,
+    );
+    if (dto.entries.length === 0 || totalHours <= 0 || totalHours > 24) {
+      throw new BadRequestException(
+        "Total DPR hours must be greater than 0 and no more than 24",
+      );
+    }
+
+    for (const entry of dto.entries) {
+      if (entry.hours < 0 || entry.hours > 24) {
+        throw new BadRequestException("Each DPR entry must be between 0 and 24 hours");
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.dPREntry.deleteMany({ where: { dprId } });
+      for (const entry of dto.entries) {
+        if (entry.todoId) {
+          const todo = await tx.todo.findFirst({
+            where: { id: entry.todoId, workDayId: dpr.workDayId },
+          });
+          if (!todo) {
+            throw new BadRequestException("One of the selected tasks does not belong to this work day");
+          }
+        }
+        await tx.dPREntry.create({
+          data: {
+            dprId,
+            todoId: entry.todoId,
+            project: entry.project,
+            description: entry.description,
+            hours: entry.hours,
+            output: entry.output,
+            blocker: entry.blocker,
+            tomorrowPlan: entry.tomorrowPlan,
+            isManualEntry: !entry.todoId,
+          },
+        });
+      }
+      await tx.dPRAuditEntry.create({
+        data: {
+          dprId,
+          action: "EDITED_BY_HR",
+          actorId,
+          detail: "HR edited the DPR from Daily Activity.",
+        },
+      });
+    });
+
+    await this.recalcHoursAndFlags(dprId);
+
+    const analysisText = (await this.prisma.dPREntry.findMany({
+      where: { dprId },
+      orderBy: { createdAt: "asc" },
+      select: { description: true, output: true, blocker: true, tomorrowPlan: true },
+    }))
+      .map((entry) => [entry.description, entry.output, entry.blocker, entry.tomorrowPlan].filter(Boolean).join("\n"))
+      .join("\n\n");
+    await this.taskAi.analyzeAndPersistForWorkDay(dpr.workDayId, analysisText);
+
+    return this.prisma.dPR.findUniqueOrThrow({
+      where: { id: dprId },
+      include: {
+        entries: { include: { todo: true } },
+        workDay: { include: { employee: true } },
+      },
+    });
   }
 
   async rateQuality(

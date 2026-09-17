@@ -105,6 +105,7 @@ export class ReportsService {
         dpr: {
           include: {
             entries: { include: { todo: true }, orderBy: { createdAt: "asc" } },
+            reviewer: { select: { id: true, firstName: true, lastName: true, user: { select: { roles: { select: { role: { select: { name: true } } } } } } } },
             auditTrail: { orderBy: { createdAt: "asc" } },
           },
         },
@@ -138,10 +139,16 @@ export class ReportsService {
             reviewedAt: dpr.reviewedAt,
             reviewComment: dpr.reviewComment,
             qualityScore: dpr.qualityScore,
+            lockedAt: dpr.lockedAt,
             totalHours: Number(dprHours.toFixed(2)),
             aiCompletionPercent: aiValues.length ? Number((aiValues.reduce((a: number,b: number)=>a+b,0)/aiValues.length).toFixed(1)) : null,
             entries: dpr.entries,
             auditTrail: dpr.auditTrail,
+            reviewedBy: dpr.reviewer ? {
+              id: dpr.reviewer.id,
+              name: `${dpr.reviewer.firstName} ${dpr.reviewer.lastName}`.trim(),
+              roles: dpr.reviewer.user.roles.map((r: any) => r.role.name),
+            } : null,
           } : null,
           todos,
           todoSummary: { total: todos.length, resolved, pending: todos.length - resolved },

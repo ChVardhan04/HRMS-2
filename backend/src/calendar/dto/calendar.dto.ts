@@ -83,6 +83,12 @@ export class CalendarSettingsDto {
   @IsInt()
   @Min(0)
   @Max(1439)
+  attendanceReminderMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1439)
   dprSlaMinutes?: number;
 
   @IsOptional()

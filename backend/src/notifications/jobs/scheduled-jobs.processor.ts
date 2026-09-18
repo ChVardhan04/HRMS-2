@@ -57,6 +57,10 @@ export class ScheduledJobsProcessor extends WorkerHost {
           return await this.resolve(
             AttendanceSchedulerService,
           ).runAutoAbsentSweep();
+        case JobName.ATTENDANCE_REMINDER_SWEEP:
+          return await this.resolve(
+            AttendanceSchedulerService,
+          ).runAttendanceReminderSweep();
         case JobName.BIRTHDAY_SWEEP:
           return await this.resolve(BirthdaySchedulerService).runBirthdaySweep();
         default:

@@ -330,6 +330,7 @@ model Organization {
   attendanceCallStartMinutes Int @default(555)
   attendanceCallEndMinutes Int @default(570)
   attendanceAbsenceCutoffMinutes Int @default(780)
+  attendanceReminderMinutes Int @default(571)
   dprSlaMinutes Int @default(1320)
   dprReminder1Minutes Int @default(1080)
   dprReminder2Minutes Int @default(1200)
@@ -528,6 +529,7 @@ model WorkDay {
   lateCountInMonth  Int?
   latePenaltyDays   Decimal   @default(0) @db.Decimal(4, 2)
   absenceNotifiedAt DateTime?
+  attendanceReminderSentAt DateTime?
 
   totalLoggedHours  Decimal   @default(0) @db.Decimal(5, 2)
   portalActiveMinutes Int @default(0)

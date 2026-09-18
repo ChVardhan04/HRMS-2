@@ -10,5 +10,6 @@ export enum JobName {
   LEAVE_ACCRUAL = "leave-accrual",
   STRIKE_EVALUATION = "strike-evaluation",
   AUTO_ABSENT_SWEEP = "auto-absent-sweep",
+  ATTENDANCE_REMINDER_SWEEP = "attendance-reminder-sweep",
   BIRTHDAY_SWEEP = "birthday-sweep",
 }

@@ -347,43 +347,90 @@ export class AttendanceService {
 
   async portalHeartbeat(employeeId: string, sessionId: string) {
     const now = new Date();
-    if (!sessionId || sessionId.length > 100) throw new BadRequestException("Invalid portal session");
+    if (!sessionId || sessionId.length > 100) {
+      throw new BadRequestException("Invalid portal session");
+    }
+
     const policy = await this.calendarService.getEmployeePolicy(employeeId);
     const workDay = await this.workdayService.getOrCreate(employeeId, now);
-    if (!workDay.checkInAt) throw new BadRequestException("Check in first to start portal activity tracking");
-    if (workDay.checkOutAt) return { activeMinutes: Number(workDay.portalActiveMinutes), heartbeatCount: workDay.portalHeartbeatCount, checkedOut: true };
 
-    // A new browser/tab session starts a fresh portal timer. This prevents a
-    // closed tab from being credited with time while it was not open. Refreshes
-    // in the same tab keep sessionStorage and therefore keep the same session.
-    if (workDay.portalSessionId !== sessionId) {
-      const claimed = await this.prisma.workDay.updateMany({
-        where: { id: workDay.id, checkOutAt: null, portalSessionId: { not: sessionId } },
-        data: { portalSessionId: sessionId, portalLastHeartbeatAt: now },
-      });
-      if (claimed.count === 1) {
-        return { activeMinutes: Number(workDay.portalActiveMinutes), heartbeatCount: workDay.portalHeartbeatCount, checkedOut: false, sessionStarted: true };
-      }
+    if (!workDay.checkInAt) {
+      throw new BadRequestException(
+        "Check in first to start portal activity tracking",
+      );
     }
 
+    if (workDay.checkOutAt) {
+      return {
+        activeMinutes: Number(workDay.portalActiveMinutes),
+        heartbeatCount: workDay.portalHeartbeatCount,
+        checkedOut: true,
+      };
+    }
+
+    // Do not depend on a browser timer being exact. Browsers can throttle
+    // background tabs and pause JavaScript when a laptop sleeps. The server
+    // keeps the authoritative cursor and catches up elapsed working time on
+    // the next successful heartbeat. This also makes refreshes/reopened tabs
+    // safe: they cannot reset the cursor or lose the elapsed interval.
     const last = workDay.portalLastHeartbeatAt ?? workDay.checkInAt;
-    const elapsedActiveMinutes = this.portalActiveMinutesBetween(new Date(last), now, policy.lunchStartMinutes, policy.lunchEndMinutes, policy.timezone);
+    const elapsedActiveMinutes = this.portalActiveMinutesBetween(
+      new Date(last),
+      now,
+      policy.lunchStartMinutes,
+      policy.lunchEndMinutes,
+      policy.timezone,
+    );
     const completedHours = Math.floor(elapsedActiveMinutes / 60);
-    if (completedHours < 1) {
-      return { activeMinutes: Number(workDay.portalActiveMinutes), heartbeatCount: workDay.portalHeartbeatCount, checkedOut: false, nextHeartbeatInMinutes: Math.max(1, 60 - elapsedActiveMinutes) };
+    const minutesToAdd = completedHours * 60;
+    const heartbeatCursor = minutesToAdd > 0
+      ? new Date(new Date(last).getTime() + minutesToAdd * 60000)
+      : new Date(last);
+
+    if (minutesToAdd === 0) {
+      // Keep the original cursor until a full hour is completed. This means a
+      // delayed request can catch up the whole interval instead of resetting
+      // the one-hour counter every time.
+      return {
+        activeMinutes: Number(workDay.portalActiveMinutes),
+        heartbeatCount: workDay.portalHeartbeatCount,
+        checkedOut: false,
+        nextHeartbeatInMinutes: Math.max(1, 60 - elapsedActiveMinutes),
+      };
     }
 
-    const minutesToAdd = completedHours * 60;
-    const heartbeatCursor = new Date(new Date(last).getTime() + minutesToAdd * 60000);
     const claimed = await this.prisma.workDay.updateMany({
-      where: { id: workDay.id, checkOutAt: null, portalSessionId: sessionId, portalLastHeartbeatAt: last },
-      data: { portalActiveMinutes: { increment: minutesToAdd }, portalHeartbeatCount: { increment: completedHours }, portalLastHeartbeatAt: heartbeatCursor },
+      where: {
+        id: workDay.id,
+        checkOutAt: null,
+        portalLastHeartbeatAt: last,
+      },
+      data: {
+        portalActiveMinutes: { increment: minutesToAdd },
+        portalHeartbeatCount: { increment: completedHours },
+        portalLastHeartbeatAt: heartbeatCursor,
+        portalSessionId: sessionId,
+      },
     });
+
     if (claimed.count !== 1) {
-      const current = await this.prisma.workDay.findUniqueOrThrow({ where: { id: workDay.id }});
-      return { activeMinutes: Number(current.portalActiveMinutes), heartbeatCount: current.portalHeartbeatCount, checkedOut: !!current.checkOutAt };
+      const current = await this.prisma.workDay.findUniqueOrThrow({
+        where: { id: workDay.id },
+      });
+      return {
+        activeMinutes: Number(current.portalActiveMinutes),
+        heartbeatCount: current.portalHeartbeatCount,
+        checkedOut: !!current.checkOutAt,
+      };
     }
-    return { activeMinutes: Number(workDay.portalActiveMinutes) + minutesToAdd, heartbeatCount: workDay.portalHeartbeatCount + completedHours, checkedOut: false, lastHeartbeatAt: heartbeatCursor, caughtUpHours: completedHours };
+
+    return {
+      activeMinutes: Number(workDay.portalActiveMinutes) + minutesToAdd,
+      heartbeatCount: workDay.portalHeartbeatCount + completedHours,
+      checkedOut: false,
+      lastHeartbeatAt: heartbeatCursor,
+      caughtUpHours: completedHours,
+    };
   }
 
   async portalActivityToday(employeeId: string, actor?: { employeeId?: string; roles: string[] }) {

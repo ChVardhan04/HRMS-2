@@ -7,11 +7,17 @@ import { useTodayWorkDay } from '@/features/workday/use-workday';
 import { useAuthStore } from '@/lib/auth-store';
 
 /**
- * Keeps the employee's portal-active hour counter in sync after check-in.
- * The browser sends one heartbeat for every completed active hour. If the
- * browser timer is delayed while the tab remains open, the backend catches up
- * the completed hours in one idempotent request. A closed tab cannot send a
- * heartbeat, so it does not invent extra time on a later visit.
+ * Sends lightweight portal heartbeats after check-in.
+ *
+ * The browser is not reliable for exact one-hour timers: background tabs can be
+ * throttled and sleeping laptops pause JavaScript completely. The backend
+ * therefore calculates elapsed time from the last successful heartbeat and
+ * catches up completed intervals when the next request arrives.
+ *
+ * We send every 5 minutes instead of once an hour so a normal open tab gets
+ * regular requests, while the backend still counts only completed hours in the
+ * hourly-check counter. Visibility changes and the browser coming back online
+ * trigger an immediate retry.
  */
 export function PortalActivityTracker() {
   const user = useAuthStore((s) => s.user);
@@ -21,64 +27,52 @@ export function PortalActivityTracker() {
   useEffect(() => {
     if (!user?.employee?.id || !workDay?.checkInAt || workDay?.checkOutAt) return;
 
-    let sessionId = sessionStorage.getItem('hrms-portal-session-id');
-    if (!sessionId) {
-      sessionId = `${crypto.randomUUID()}`;
-      sessionStorage.setItem('hrms-portal-session-id', sessionId);
-    }
-
-    let timer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
 
-    const sendHeartbeat = async () => {
-      if (cancelled || document.visibilityState === 'hidden') return false;
+    const heartbeat = async () => {
+      if (cancelled) return;
       try {
-        await api.post('/attendance/portal-heartbeat', { sessionId, clientTime: new Date().toISOString() });
-        qc.invalidateQueries({ queryKey: ['work-day', 'today'] });
-        qc.invalidateQueries({ queryKey: ['work-day', 'team-today'] });
-        return true;
+        await api.post('/attendance/portal-heartbeat', {
+          // Kept for API compatibility. The server uses its own WorkDay cursor
+          // so multiple tabs/reloads cannot reset the timer.
+          sessionId: 'browser',
+          clientTime: new Date().toISOString(),
+        });
+        if (!cancelled) {
+          qc.invalidateQueries({ queryKey: ['work-day', 'today'] });
+          qc.invalidateQueries({ queryKey: ['work-day', 'team-today'] });
+        }
       } catch {
-        // The next scheduled heartbeat will retry. No employee action is needed.
-        return false;
+        // A temporary network/browser sleep is fine. The next heartbeat will
+        // retry and the server will catch up elapsed time from its last cursor.
       }
     };
 
-    const schedule = () => {
-      if (cancelled) return;
-      const base = new Date(workDay.portalLastHeartbeatAt ?? workDay.checkInAt).getTime();
-      const elapsed = Math.max(0, Date.now() - base);
-      const remaining = Math.max(1000, 60 * 60 * 1000 - elapsed);
-      timer = setTimeout(async () => {
-        if (document.visibilityState === 'hidden') {
-          timer = setTimeout(schedule, 60 * 1000);
-          return;
-        }
-        await sendHeartbeat();
-        schedule();
-      }, remaining);
-    };
+    // Start immediately after check-in, then retry every five minutes.
+    void heartbeat();
+    timer = setInterval(() => void heartbeat(), 5 * 60 * 1000);
 
-    if (workDay.portalSessionId !== sessionId) {
-      void sendHeartbeat().then(() => {
-        if (!cancelled) {
-          timer = setTimeout(() => { void sendHeartbeat(); schedule(); }, 60 * 60 * 1000);
-        }
-      });
-    } else {
-      schedule();
-    }
-
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') sendHeartbeat();
+    const onVisibility = () => {
+      // Do not block hidden tabs. Browsers may throttle them, but when the page
+      // becomes visible again this gives us an immediate catch-up request.
+      if (document.visibilityState === 'visible') void heartbeat();
     };
-    document.addEventListener('visibilitychange', onVisible);
+    const onOnline = () => void heartbeat();
+    const onFocus = () => void heartbeat();
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('focus', onFocus);
 
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
-      document.removeEventListener('visibilitychange', onVisible);
+      if (timer) clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('focus', onFocus);
     };
-  }, [user?.employee?.id, workDay?.checkInAt, workDay?.checkOutAt, workDay?.portalLastHeartbeatAt, qc]);
+  }, [user?.employee?.id, workDay?.checkInAt, workDay?.checkOutAt, qc]);
 
   return null;
 }

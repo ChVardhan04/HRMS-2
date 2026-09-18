@@ -41,6 +41,7 @@ export class QueueSchedulerService implements OnModuleInit {
       { name: JobName.LEAVE_ACCRUAL, cron: "0 1 1 * *" }, // 1st of month, 01:00 local
       { name: JobName.STRIKE_EVALUATION, cron: "30 1 1 * *" }, // 1st of month, 01:30 local
       { name: JobName.AUTO_ABSENT_SWEEP, cron: "*/15 * * * *" }, // service checks the organization-configured local cutoff
+      { name: JobName.ATTENDANCE_REMINDER_SWEEP, cron: "* * * * *" }, // service sends the reminder at the configured local minute
       { name: JobName.BIRTHDAY_SWEEP, cron: "30 8 * * *" }, // 08:30 local
     ];
 

@@ -40,6 +40,7 @@ export class CalendarService {
       halfDayAfterMinutes: Math.max(org.officeStartMinutes + org.lateGraceMinutes, 645),
       checkInCutoffMinutes: org.attendanceAbsenceCutoffMinutes,
       autoAbsentMinutes: org.attendanceAbsenceCutoffMinutes,
+      attendanceReminderMinutes: org.attendanceReminderMinutes,
       allowedLatesPerMonth: 2,
       firstLatePenaltyDays: 0,
       secondLatePenaltyDays: 0,
@@ -65,7 +66,7 @@ export class CalendarService {
       const policy = await this.prisma.departmentPolicy.create({ data: { departmentId } });
       return { ...policy, timezone: org.timezone };
     }
-    return { ...department.policy, timezone: org.timezone };
+    return { ...department.policy, attendanceReminderMinutes: org.attendanceReminderMinutes, timezone: org.timezone };
   }
 
   async getEmployeePolicy(employeeId: string) {
@@ -126,6 +127,7 @@ export class CalendarService {
       attendanceCallStartMinutes: org.attendanceCallStartMinutes,
       attendanceCallEndMinutes: org.attendanceCallEndMinutes,
       attendanceAbsenceCutoffMinutes: org.attendanceAbsenceCutoffMinutes,
+      attendanceReminderMinutes: org.attendanceReminderMinutes,
       dprSlaMinutes: org.dprSlaMinutes, dprReminder1Minutes: org.dprReminder1Minutes,
       dprReminder2Minutes: org.dprReminder2Minutes,
       kraStrikeThresholdScore: org.kraStrikeThresholdScore,

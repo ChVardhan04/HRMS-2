@@ -8,7 +8,7 @@ export function PortalActivityTeamCard({ team = [], title = 'Portal activity tod
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Laptop className="h-4 w-4 text-primary" /> {title}</CardTitle>
-        <p className="text-xs text-muted-foreground">Hours the HRMS portal has been kept open after check-in. The configured lunch window is excluded.</p>
+        <p className="text-xs text-muted-foreground">Tracked HRMS time after check-in. The configured lunch window is excluded.</p>
       </CardHeader>
       <CardContent>
         {!team.length ? <p className="text-sm text-muted-foreground">No assigned employees found.</p> : (

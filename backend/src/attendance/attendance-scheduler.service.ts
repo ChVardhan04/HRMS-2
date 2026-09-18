@@ -22,6 +22,67 @@ export class AttendanceSchedulerService {
     return Number(parts.find((p) => p.type === "hour")?.value ?? 0) * 60 + Number(parts.find((p) => p.type === "minute")?.value ?? 0);
   }
 
+
+  async runAttendanceReminderSweep() {
+    const now = new Date();
+    const org = await this.calendarService.getOrganization();
+    const reminderMinute = org.attendanceReminderMinutes ?? 571;
+
+    // This job runs every minute, but only does work at the configured local
+    // reminder minute. It intentionally does not mark anyone absent.
+    if (this.localMinutes(now, org.timezone) !== reminderMinute) {
+      return { sent: 0 };
+    }
+
+    const today = this.workdayService.startOfDay(now, org.timezone);
+    const activeEmployees = await this.prisma.employee.findMany({
+      where: { deletedAt: null, employmentStatus: { not: "EXITED" } },
+      include: { user: true, manager: { include: { user: true } } },
+    });
+
+    let sent = 0;
+    for (const employee of activeEmployees) {
+      const dayPolicy = await this.calendarService.isWorkingDayForEmployee(employee.id, today);
+      if (!dayPolicy.working) continue;
+
+      const workDay = await this.workdayService.getOrCreate(employee.id, today);
+      if (workDay.checkInAt || workDay.attendanceReminderSentAt) continue;
+      if (
+        workDay.attendanceStatus === AttendanceStatus.ON_LEAVE ||
+        workDay.attendanceStatus === AttendanceStatus.HOLIDAY ||
+        workDay.attendanceStatus === AttendanceStatus.WEEKEND
+      ) continue;
+
+      const claimed = await this.prisma.workDay.updateMany({
+        where: { id: workDay.id, checkInAt: null, attendanceReminderSentAt: null },
+        data: { attendanceReminderSentAt: now },
+      });
+      if (claimed.count !== 1) continue;
+
+      await this.notifications.notify({
+        userId: employee.userId,
+        title: "Attendance reminder",
+        body: "Please check in to HRMS for today if you have started work.",
+        category: NotificationCategory.GENERAL,
+        emailAlso: true,
+        recipientEmail: employee.user.email,
+      });
+      if (employee.manager?.user) {
+        await this.notifications.notify({
+          userId: employee.manager.userId!,
+          title: "Attendance reminder sent",
+          body: `${employee.firstName} ${employee.lastName} had no check-in recorded at the attendance reminder time.`,
+          category: NotificationCategory.GENERAL,
+          emailAlso: false,
+        });
+      }
+      sent += 1;
+    }
+
+    this.logger.log(`Attendance reminder sweep sent ${sent} reminder(s).`);
+    return { sent };
+  }
+
   async runAutoAbsentSweep() {
     const now = new Date();
     const org = await this.calendarService.getOrganization();

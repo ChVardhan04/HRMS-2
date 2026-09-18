@@ -30,7 +30,7 @@ async function main() {
       name: 'Webisdom Group', domain: 'webisdom.com', timezone: 'Asia/Kolkata',
       officeStartMinutes: 570, officeEndMinutes: 1140, lunchStartMinutes: 810, lunchEndMinutes: 840,
       lateGraceMinutes: 60, attendanceCallStartMinutes: 555, attendanceCallEndMinutes: 570,
-      attendanceAbsenceCutoffMinutes: 780, dprSlaMinutes: 1320, dprReminder1Minutes: 1080,
+      attendanceAbsenceCutoffMinutes: 780, attendanceReminderMinutes: 571, dprSlaMinutes: 1320, dprReminder1Minutes: 1080,
       dprReminder2Minutes: 1200, kraStrikeThresholdScore: 80, kraRollingWindowMonths: 6,
       kraStrikesToEscalate: 3, saturdayWorkPattern: 'FIRST_THIRD_WORKING',
     },

@@ -13,7 +13,6 @@ import {
   useCheckIn,
   useCheckOut,
   useUndoCheckOut,
-  useUndoCheckIn,
   useTodayWorkDay,
 } from '@/features/workday/use-workday';
 import { formatDateTime } from '@/lib/utils';
@@ -25,7 +24,6 @@ export function CheckInWidget() {
   const checkIn = useCheckIn();
   const checkOut = useCheckOut();
   const undoCheckOut = useUndoCheckOut();
-  const undoCheckIn = useUndoCheckIn();
   const { data: eod } = useTodoEodStatus();
   const isEmployee = useAuthStore((s) =>
     s.hasRole('EMPLOYEE') && !s.hasRole('MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'),
@@ -142,15 +140,6 @@ export function CheckInWidget() {
                   >
                     <LogOut className="h-4 w-4" />
                     Check out
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="flex-1"
-                    disabled={undoCheckIn.isPending}
-                    onClick={() => undoCheckIn.mutate()}
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    Undo check-in
                   </Button>
                 </>
               ) : null}

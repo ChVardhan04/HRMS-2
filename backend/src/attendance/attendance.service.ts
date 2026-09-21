@@ -3,6 +3,7 @@ import {
   AttendanceSource,
   AttendanceStatus,
   DprStatus,
+  PortalActivityReviewStatus,
 } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { WorkdayService } from "../workday/workday.service";
@@ -431,6 +432,30 @@ export class AttendanceService {
       lastHeartbeatAt: heartbeatCursor,
       caughtUpHours: completedHours,
     };
+  }
+
+  async reviewPortalActivity(
+    employeeId: string,
+    reviewerId: string,
+    status: PortalActivityReviewStatus,
+    note?: string,
+  ) {
+    const workDay = await this.workdayService.findForEmployeeDate(employeeId, new Date());
+    if (!workDay) throw new NotFoundException("Today's WorkDay not found");
+    if (!workDay.checkInAt) throw new BadRequestException("Employee has not checked in today");
+    if (workDay.dprStatus === DprStatus.DRAFT) {
+      throw new BadRequestException("Employee DPR must be submitted before portal activity can be reviewed");
+    }
+
+    return this.prisma.workDay.update({
+      where: { id: workDay.id },
+      data: {
+        portalActivityReviewStatus: status,
+        portalActivityReviewedById: reviewerId,
+        portalActivityReviewedAt: new Date(),
+        portalActivityReviewNote: note?.trim() || null,
+      },
+    });
   }
 
   async portalActivityToday(employeeId: string, actor?: { employeeId?: string; roles: string[] }) {

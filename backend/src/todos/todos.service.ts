@@ -148,15 +148,7 @@ export class TodosService {
         status: { notIn: [TodoStatus.CANCELLED] },
         OR: [
           { dueDate: { gte: today, lt: tomorrow } },
-          {
-            status: {
-              in: [
-                TodoStatus.PENDING,
-                TodoStatus.IN_PROGRESS,
-                TodoStatus.OVERDUE,
-              ],
-            },
-          },
+          { workDayId: workDay.id },
         ],
       },
       orderBy: [{ priority: "desc" }, { dueDate: "asc" }],

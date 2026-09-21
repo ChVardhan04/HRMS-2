@@ -7,10 +7,13 @@ import { StatCard } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { useTeamToday } from '@/features/workday/use-workday';
+import { PortalActivityTeamCard } from '@/components/attendance/portal-activity-team-card';
 
 export function LeadershipDashboard() {
   const { data, isLoading } = useQuery({ queryKey: ['reports', 'leadership-summary'], queryFn: () => api.get<any>('/reports/leadership-summary') });
   const { data: hiringFunnel } = useQuery({ queryKey: ['reports', 'hiring-funnel'], queryFn: () => api.get<any[]>('/reports/hiring-funnel') });
+  const { data: team } = useTeamToday();
 
   const attendanceTotal = data ? data.attendance.present + data.attendance.absent + data.attendance.onLeave : 0;
 
@@ -22,6 +25,8 @@ export function LeadershipDashboard() {
         <StatCard label="Average KRA" value={data?.averageKra == null ? '-' : `${data.averageKra}%`} icon={Target} />
         <StatCard label="Open jobs" value={data?.openJobs ?? 0} icon={Briefcase} />
       </div>
+
+      <PortalActivityTeamCard team={team} title="Company portal activity today" />
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card><CardContent className="p-5"><CalendarDays className="mb-2 h-5 w-5 text-primary"/><p className="text-sm text-muted-foreground">On leave today</p><p className="text-2xl font-semibold">{data?.attendance?.onLeave ?? 0}</p><p className="mt-1 text-xs text-muted-foreground">Pending leave requests: {data?.pendingLeaves ?? 0}</p></CardContent></Card>

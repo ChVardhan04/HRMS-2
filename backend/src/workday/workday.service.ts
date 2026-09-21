@@ -138,12 +138,13 @@ export class WorkdayService {
     const today = this.startOfDay();
     const isHr =
       roles.includes(RoleName.HR_ADMIN) || roles.includes(RoleName.SUPER_ADMIN);
+    const isLeadership = roles.includes(RoleName.LEADERSHIP);
 
     const employees = await this.prisma.employee.findMany({
       where: {
         deletedAt: null,
         employmentStatus: { not: "EXITED" },
-        ...(isHr ? {} : { managerId: employeeId }),
+        ...(isHr || isLeadership ? {} : { managerId: employeeId }),
       },
       select: { id: true },
     });

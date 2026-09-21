@@ -97,7 +97,10 @@ export class AttendanceSchedulerService {
       const policy = await this.calendarService.getEmployeePolicy(employee.id);
       const dayPolicy = await this.calendarService.isWorkingDayForEmployee(employee.id, today);
       if (!dayPolicy.working) continue;
-      if (this.localMinutes(now, policy.timezone) < policy.autoAbsentMinutes) continue;
+      // Run the absence action only at the configured local cutoff minute.
+      // This prevents a queued/replayed job from sending the old absence email
+      // at midnight or at an unrelated time.
+      if (this.localMinutes(now, policy.timezone) !== policy.autoAbsentMinutes) continue;
 
       const workDay = await this.workdayService.getOrCreate(employee.id, today);
       if (workDay.checkInAt) continue;
@@ -116,8 +119,8 @@ export class AttendanceSchedulerService {
         title: "No check-in recorded today",
         body: "You have not checked in today. You have been marked absent unless approved leave is applied.",
         category: NotificationCategory.GENERAL,
-        emailAlso: true,
-        recipientEmail: employee.user.email,
+        emailAlso: false,
+        
       });
       if (employee.manager?.user) {
         await this.notifications.notify({

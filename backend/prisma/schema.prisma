@@ -76,6 +76,12 @@ enum DprStatus {
   NEEDS_CHANGES
 }
 
+enum PortalActivityReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum TodoStatus {
   PENDING
   IN_PROGRESS
@@ -536,6 +542,10 @@ model WorkDay {
   portalHeartbeatCount Int @default(0)
   portalLastHeartbeatAt DateTime?
   portalSessionId String?
+  portalActivityReviewStatus PortalActivityReviewStatus @default(PENDING)
+  portalActivityReviewedById String?
+  portalActivityReviewedAt DateTime?
+  portalActivityReviewNote String?
   dprStatus         DprStatus @default(DRAFT)
 
   attendanceRecords AttendanceRecord[]

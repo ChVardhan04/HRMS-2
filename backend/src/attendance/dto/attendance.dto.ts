@@ -1,4 +1,5 @@
-import { IsLatitude, IsLongitude, IsOptional, IsString } from "class-validator";
+import { IsEnum, IsLatitude, IsLongitude, IsOptional, IsString } from "class-validator";
+import { PortalActivityReviewStatus } from "@prisma/client";
 
 export class CheckInDto {
   @IsOptional()
@@ -51,4 +52,14 @@ export class PortalHeartbeatDto {
   @IsOptional()
   @IsString()
   clientTime?: string;
+}
+
+
+export class PortalActivityReviewDto {
+  @IsEnum(PortalActivityReviewStatus)
+  status: PortalActivityReviewStatus;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

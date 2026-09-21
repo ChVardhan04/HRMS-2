@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Plus, Search, Users, UserX, UserCheck, Trash2 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
@@ -31,7 +32,20 @@ const roleOptions = [
 
 export default function EmployeesPage() {
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const initialPage = Math.max(1, Number(searchParams.get('page') ?? '1') || 1);
+  const [page, setPageState] = useState(initialPage);
+  const setPage = (next: number | ((current: number) => number)) => {
+    setPageState((current) => {
+      const value = typeof next === 'function' ? next(current) : next;
+      const params = new URLSearchParams(searchParams.toString());
+      if (value <= 1) params.delete('page'); else params.set('page', String(value));
+      router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ''}`, { scroll: false });
+      return value;
+    });
+  };
   const [includeExited, setIncludeExited] = useState(false);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);

@@ -21,6 +21,7 @@ import {
   CheckOutDto,
   RegularisationRequestDto,
   PortalHeartbeatDto,
+  PortalActivityReviewDto,
 } from "./dto/attendance.dto";
 
 @Controller("attendance")
@@ -52,6 +53,22 @@ export class AttendanceController {
   @Get("portal-activity/today")
   portalActivityToday(@CurrentUser() user: AuthenticatedUser, @Query("employeeId") employeeId?: string) {
     return this.attendanceService.portalActivityToday(employeeId ?? user.employeeId!, user);
+  }
+
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Post("portal-activity/:employeeId/review")
+  reviewPortalActivity(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("employeeId") employeeId: string,
+    @Body() dto: PortalActivityReviewDto,
+  ) {
+    return this.attendanceService.reviewPortalActivity(
+      employeeId,
+      user.employeeId!,
+      dto.status,
+      dto.note,
+    );
   }
 
   @Post("check-out")

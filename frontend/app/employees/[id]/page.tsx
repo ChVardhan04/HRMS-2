@@ -24,10 +24,7 @@ const roleOptions = [['EMPLOYEE','Employee'],['MANAGER','Manager'],['LEADERSHIP'
 export default function EmployeeProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [returnTo] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    return new URLSearchParams(window.location.search).get('returnTo');
-  });
+  const [returnPage, setReturnPage] = useState(1);
   const { data: employee, isLoading } = useEmployee(id);
   const { data: departments } = useDepartments();
   const { data: allEmployees } = useEmployees('', 100, 1, true);
@@ -45,6 +42,17 @@ export default function EmployeeProfilePage() {
   const { data: documents } = useQuery({ queryKey: ['employee-documents', id], queryFn: () => api.get<any[]>(`/employees/${id}/documents`) });
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = Number(params.get('returnPage') ?? '');
+      const fromStorage = Number(
+        window.sessionStorage.getItem('hrms-employees-return-page') ?? '',
+      );
+      setReturnPage(Math.max(1, fromUrl || fromStorage || 1));
+    }
+  }, []);
+
+  useEffect(() => {
     if (!employee) return;
     const roles = employee.user?.roles?.map((r: any) => r.role?.name ?? r.name).filter(Boolean) ?? ['EMPLOYEE'];
     setForm({
@@ -60,8 +68,7 @@ export default function EmployeeProfilePage() {
 
   const selectedDepartment = useMemo(() => departments?.find((d: any) => d.id === form.departmentId), [departments, form.departmentId]);
   const update = (key: string, value: string) => setForm((f: any) => ({ ...f, [key]: value, ...(key === 'departmentId' ? { designationId: '' } : {}) }));
-  const finishConfirm = () => { setConfirm(null); if (confirm === 'delete') router.replace(returnTo || '/employees'); else qc.invalidateQueries({ queryKey: ['employees', id] }); };
-  const goBackToEmployees = () => router.push(returnTo || '/employees');
+  const finishConfirm = () => { setConfirm(null); if (confirm === 'delete') router.replace(returnPage > 1 ? `/employees?page=${returnPage}` : '/employees'); else qc.invalidateQueries({ queryKey: ['employees', id] }); };
   const runConfirm = () => { if (confirm === 'delete') remove.mutate(undefined, { onSuccess: finishConfirm }); if (confirm === 'deactivate') deactivate.mutate(undefined, { onSuccess: finishConfirm }); if (confirm === 'reactivate') reactivate.mutate(undefined, { onSuccess: finishConfirm }); };
 
   if (isLoading || !employee) return <AppShell title="Employee Profile"><div className="h-64 animate-pulse rounded-md bg-muted" /></AppShell>;
@@ -70,7 +77,7 @@ export default function EmployeeProfilePage() {
     <AppShell title="Employee Profile">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Button variant="ghost" onClick={goBackToEmployees}><ArrowLeft className="h-4 w-4" /> Employees</Button>
+          <Button variant="ghost" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /> Employees</Button>
           <div className="flex flex-wrap items-center gap-2">
             {canEdit && employee.user?.mustChangePassword && <Button variant="outline" onClick={() => resendActivation.mutate(id)} disabled={resendActivation.isPending}>{resendActivation.isPending ? 'Sending...' : 'Resend activation'}</Button>}
             {canEdit && employee.employmentStatus !== 'EXITED' && <Button variant="outline" onClick={() => setConfirm('deactivate')}><UserX className="h-4 w-4"/> Deactivate</Button>}

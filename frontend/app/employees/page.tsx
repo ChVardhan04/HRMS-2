@@ -267,9 +267,15 @@ function EmployeesContent() {
                     <TableRow key={emp.id}>
                       <TableCell>
                         <Link
-                          href={`/employees/${emp.id}?returnTo=${encodeURIComponent(
-                            `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
-                          )}`}
+                          href={`/employees/${emp.id}?returnPage=${page}`}
+                          onClick={() => {
+                            if (typeof window !== 'undefined') {
+                              window.sessionStorage.setItem(
+                                'hrms-employees-return-page',
+                                String(page),
+                              );
+                            }
+                          }}
                           className="flex items-center gap-2"
                         >
                           <Avatar className="h-7 w-7">

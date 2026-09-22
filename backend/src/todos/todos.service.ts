@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { RoleName, TodoEodStatus, TodoStatus } from "@prisma/client";
+import { DprStatus, RoleName, TodoEodStatus, TodoStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { WorkdayService } from "../workday/workday.service";
 import { DprService } from "../dpr/dpr.service";
@@ -141,17 +141,32 @@ export class TodosService {
     const today = this.workdayService.startOfDay();
     const workDay = await this.workdayService.getOrCreate(employeeId, today);
     if (!workDay.checkInAt) return [];
-    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
+    // A task should remain visible until it has actually been submitted as
+    // part of a DPR. Once its DPR is submitted, it remains in the database
+    // for history but is no longer carried into the next day's task list.
+    // Pending tasks that were never included in a DPR are intentionally
+    // carried forward so employees do not lose unfinished work.
     return this.prisma.todo.findMany({
       where: {
         assigneeId: employeeId,
         status: { notIn: [TodoStatus.CANCELLED] },
         OR: [
-          { dueDate: { gte: today, lt: tomorrow } },
+          // Always show today's tasks, including tasks already resolved today.
           { workDayId: workDay.id },
+          // Carry unfinished tasks forward until they are resolved into a DPR.
+          { eodStatus: TodoEodStatus.PENDING, includedInDpr: false },
+          // Keep yesterday/older resolved tasks visible while their DPR is
+          // still a draft. They disappear after that DPR is submitted.
+          {
+            includedInDpr: true,
+            workDay: {
+              dprStatus: DprStatus.DRAFT,
+            },
+          },
         ],
       },
-      orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
+      orderBy: [{ priority: "desc" }, { dueDate: "asc" }, { createdAt: "asc" }],
     });
   }
 
@@ -280,10 +295,7 @@ export class TodosService {
 
   async eodStatus(employeeId: string) {
     const workDay = await this.workdayService.getOrCreate(employeeId, new Date());
-    const tasks = await this.prisma.todo.findMany({
-      where: { workDayId: workDay.id, status: { not: TodoStatus.CANCELLED } },
-      orderBy: { createdAt: "asc" },
-    });
+    const tasks = await this.today(employeeId);
     return {
       workDayId: workDay.id,
       resolved: tasks.filter((t) => t.eodStatus !== "PENDING").length,

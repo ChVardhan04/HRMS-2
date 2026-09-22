@@ -267,7 +267,9 @@ function EmployeesContent() {
                     <TableRow key={emp.id}>
                       <TableCell>
                         <Link
-                          href={`/employees/${emp.id}`}
+                          href={`/employees/${emp.id}?returnTo=${encodeURIComponent(
+                            `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
+                          )}`}
                           className="flex items-center gap-2"
                         >
                           <Avatar className="h-7 w-7">

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CalendarService } from "../calendar/calendar.service";
+import { AuthenticatedUser } from "../common/decorators/current-user.decorator";
 
 /** Plan section 8.5 / 35: HR reports + the auto-generated month-end KRA report, no manual Excel assembly. */
 @Injectable()
@@ -78,16 +79,28 @@ export class ReportsService {
     });
   }
 
-  async dailyActivityReport(dateInput: string, employeeId?: string) {
+  async dailyActivityReport(dateInput: string, employeeId?: string, actor?: AuthenticatedUser) {
     const date = new Date(`${dateInput}T00:00:00.000Z`);
     if (Number.isNaN(date.getTime())) throw new BadRequestException("Invalid date");
     const next = new Date(date.getTime() + 86400000);
+
+    const isHr = actor?.roles.includes("HR_ADMIN") || actor?.roles.includes("SUPER_ADMIN");
+    const isLeadership = actor?.roles.includes("LEADERSHIP");
+    const isManager = actor?.roles.includes("MANAGER");
+    if (actor && !isHr && !isLeadership && !isManager) {
+      throw new BadRequestException("You are not allowed to view daily activity");
+    }
+    if (employeeId && isManager) {
+      const target = await this.prisma.employee.findUnique({ where: { id: employeeId }, select: { managerId: true } });
+      if (target?.managerId !== actor?.employeeId) throw new BadRequestException("You can only view activity for your assigned employees");
+    }
 
     const employees = await this.prisma.employee.findMany({
       where: {
         deletedAt: null,
         employmentStatus: { not: "EXITED" },
         ...(employeeId ? { id: employeeId } : {}),
+        ...(isManager && !employeeId ? { managerId: actor?.employeeId } : {}),
       },
       select: {
         id: true, employeeCode: true, firstName: true, lastName: true,

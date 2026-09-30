@@ -23,7 +23,9 @@ function statusVariant(status?: string) {
 }
 
 export default function ActivityMonitorPage() {
-  const isHr = useAuthStore((s) => s.hasRole('HR_ADMIN', 'SUPER_ADMIN'));
+  const roles = useAuthStore((s) => s.user?.roles ?? []);
+  const canView = roles.some((r: string) => ['MANAGER', 'HR_ADMIN', 'LEADERSHIP', 'SUPER_ADMIN'].includes(r));
+  const isHr = roles.includes('HR_ADMIN') || roles.includes('SUPER_ADMIN');
   const qc = useQueryClient();
   const { toast } = useToast();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
@@ -36,7 +38,7 @@ export default function ActivityMonitorPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['daily-activity', date, employeeId],
     queryFn: () => api.get<any>(`/reports/daily-activity?date=${date}${employeeId !== 'ALL' ? `&employeeId=${employeeId}` : ''}`),
-    enabled: isHr,
+    enabled: canView,
     refetchInterval: 60000,
   });
 
@@ -119,7 +121,7 @@ export default function ActivityMonitorPage() {
     }
   }
 
-  if (!isHr) return null;
+  if (!canView) return null;
 
   return (
     <AppShell title="Daily Activity">

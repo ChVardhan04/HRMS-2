@@ -20,7 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/attendance', label: 'Attendance', icon: Clock },
   { href: '/todos', label: 'To-Dos', icon: ListChecks },
-  { href: '/activity-monitor', label: 'Daily Activity', icon: ClipboardList, roles: ['HR_ADMIN', 'SUPER_ADMIN'] },
+  { href: '/activity-monitor', label: 'Daily Activity', icon: ClipboardList, roles: ['MANAGER', 'HR_ADMIN', 'LEADERSHIP', 'SUPER_ADMIN'] },
   { href: '/dpr', label: 'DPR', icon: FileText },
   { href: '/leave', label: 'Leave', icon: CalendarDays },
   { href: '/employees', label: 'Employees', icon: Users, roles: ['HR_ADMIN', 'MANAGER', 'SUPER_ADMIN'] },

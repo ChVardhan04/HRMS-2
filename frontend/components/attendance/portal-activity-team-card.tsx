@@ -11,7 +11,7 @@ import { useAuthStore } from '@/lib/auth-store';
 
 export function PortalActivityTeamCard({ team = [], title = 'Portal activity today' }: { team?: any[]; title?: string }) {
   const roles = useAuthStore((s) => s.user?.roles ?? []);
-  const canReview = roles.includes('HR_ADMIN') || roles.includes('SUPER_ADMIN');
+  const canReview = roles.includes('HR_ADMIN') || roles.includes('SUPER_ADMIN') || roles.includes('MANAGER');
   const qc = useQueryClient();
   const { toast } = useToast();
   const review = useMutation({

@@ -56,7 +56,7 @@ export class AttendanceController {
   }
 
 
-  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Post("portal-activity/:employeeId/review")
   reviewPortalActivity(
     @CurrentUser() user: AuthenticatedUser,
@@ -113,7 +113,6 @@ export class AttendanceController {
     return this.attendanceService.pendingRegularisations(user);
   }
 
-  @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Patch("regularise/:recordId/reject")
   rejectRegularisation(

@@ -440,6 +440,18 @@ export class AttendanceService {
     status: PortalActivityReviewStatus,
     note?: string,
   ) {
+    const reviewer = await this.prisma.employee.findUnique({
+      where: { id: reviewerId },
+      select: { managerId: true, user: { select: { roles: { select: { role: { select: { name: true } } } } } } },
+    });
+    const reviewerRoles = reviewer?.user.roles.map((r: any) => r.role.name) ?? [];
+    const isHr = reviewerRoles.includes("HR_ADMIN") || reviewerRoles.includes("SUPER_ADMIN");
+    if (!isHr) {
+      if (!reviewerRoles.includes("MANAGER")) throw new BadRequestException("You are not allowed to review portal activity");
+      const target = await this.prisma.employee.findUnique({ where: { id: employeeId }, select: { managerId: true } });
+      if (target?.managerId !== reviewerId) throw new BadRequestException("You can only review portal activity for your assigned employees");
+    }
+
     const workDay = await this.workdayService.findForEmployeeDate(employeeId, new Date());
     if (!workDay) throw new NotFoundException("Today's WorkDay not found");
     if (!workDay.checkInAt) throw new BadRequestException("Employee has not checked in today");

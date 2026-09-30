@@ -4,6 +4,7 @@ import { buildXlsx } from "./xlsx.util";
 import { RoleName } from "@prisma/client";
 import { Roles } from "../common/decorators/roles.decorator";
 import { ReportsService } from "./reports.service";
+import { CurrentUser, AuthenticatedUser } from "../common/decorators/current-user.decorator";
 
 @Controller("reports")
 @Roles(RoleName.HR_ADMIN, RoleName.LEADERSHIP, RoleName.SUPER_ADMIN)
@@ -31,11 +32,11 @@ export class ReportsController {
     );
   }
 
+  @Roles(RoleName.MANAGER, RoleName.HR_ADMIN, RoleName.LEADERSHIP, RoleName.SUPER_ADMIN)
   @Get("daily-activity")
-  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
-  dailyActivity(@Query("date") date: string, @Query("employeeId") employeeId?: string) {
+  dailyActivity(@CurrentUser() user: AuthenticatedUser, @Query("date") date: string, @Query("employeeId") employeeId?: string) {
     const target = date || new Date().toISOString().slice(0, 10);
-    return this.reportsService.dailyActivityReport(target, employeeId);
+    return this.reportsService.dailyActivityReport(target, employeeId, user);
   }
 
   @Get("attendance")

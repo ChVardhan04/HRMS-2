@@ -419,8 +419,304 @@ function EmployeesContent() {
         </CardContent>
       </Card>
 
-      {/* Keep your existing Add Employee Dialog here unchanged. */}
-      {/* Keep your existing action confirmation Dialog here unchanged. */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Add employee</DialogTitle>
+            <DialogDescription>
+              Create the employee record and send an account activation email.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            className="grid max-h-[70vh] gap-4 overflow-y-auto pr-1 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              createEmployee.mutate(
+                {
+                  ...form,
+                  dateOfBirth: form.dateOfBirth || undefined,
+                  personalEmail: form.personalEmail || undefined,
+                  phone: form.phone || undefined,
+                  gender: form.gender || undefined,
+                  emergencyContact: form.emergencyContact || undefined,
+                  emergencyAddress: form.emergencyAddress || undefined,
+                  departmentId: form.departmentId || undefined,
+                  designationId: form.designationId || undefined,
+                  managerId: form.managerId || undefined,
+                  skipLevelManagerId: form.skipLevelManagerId || undefined,
+                  location: form.location || undefined,
+                  monthlySalary:
+                    form.monthlySalary === ''
+                      ? undefined
+                      : Number(form.monthlySalary),
+                  roleNames: form.roleNames,
+                },
+                {
+                  onSuccess: () => {
+                    setOpen(false);
+                    setForm({ ...emptyForm });
+                    setPage(1);
+                  },
+                },
+              );
+            }}
+          >
+            <div>
+              <Label>Work email</Label>
+              <Input
+                type="email"
+                value={form.email}
+                onChange={(e) => update('email', e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Personal email</Label>
+              <Input
+                type="email"
+                value={form.personalEmail}
+                onChange={(e) => update('personalEmail', e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>First name</Label>
+              <Input
+                value={form.firstName}
+                onChange={(e) => update('firstName', e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Last name</Label>
+              <Input
+                value={form.lastName}
+                onChange={(e) => update('lastName', e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Phone</Label>
+              <Input
+                value={form.phone}
+                onChange={(e) => update('phone', e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Date of birth</Label>
+              <Input
+                type="date"
+                value={form.dateOfBirth}
+                onChange={(e) => update('dateOfBirth', e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Date of joining</Label>
+              <Input
+                type="date"
+                value={form.dateOfJoining}
+                onChange={(e) => update('dateOfJoining', e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Employment type</Label>
+              <Select
+                value={form.employmentType}
+                onValueChange={(v) => update('employmentType', v)}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[
+                    ['FULL_TIME', 'Full time'],
+                    ['PART_TIME', 'Part time'],
+                    ['CONTRACT', 'Contract'],
+                    ['INTERN', 'Intern'],
+                  ].map(([v, l]) => (
+                    <SelectItem key={v} value={v}>{l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Gender</Label>
+              <Input
+                value={form.gender}
+                onChange={(e) => update('gender', e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Department</Label>
+              <Select
+                value={form.departmentId || 'none'}
+                onValueChange={(v) => update('departmentId', v === 'none' ? '' : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No department</SelectItem>
+                  {departments?.map((d: any) => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Designation</Label>
+              <Select
+                value={form.designationId || 'none'}
+                onValueChange={(v) => update('designationId', v === 'none' ? '' : v)}
+                disabled={!selectedDepartment}
+              >
+                <SelectTrigger><SelectValue placeholder="Select designation" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No designation</SelectItem>
+                  {selectedDepartment?.designations?.map((d: any) => (
+                    <SelectItem key={d.id} value={d.id}>{d.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Reporting manager</Label>
+              <Select
+                value={form.managerId || 'none'}
+                onValueChange={(v) => update('managerId', v === 'none' ? '' : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="No manager" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No manager</SelectItem>
+                  {managers?.data?.filter((e: any) => e.employmentStatus !== 'EXITED').map((e: any) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.firstName} {e.lastName} · {e.employeeCode}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Skip-level manager</Label>
+              <Select
+                value={form.skipLevelManagerId || 'none'}
+                onValueChange={(v) => update('skipLevelManagerId', v === 'none' ? '' : v)}
+              >
+                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {managers?.data?.filter((e: any) => e.employmentStatus !== 'EXITED').map((e: any) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.firstName} {e.lastName} · {e.employeeCode}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Location</Label>
+              <Input
+                value={form.location}
+                onChange={(e) => update('location', e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Monthly salary</Label>
+              <Input
+                type="number"
+                min="0"
+                value={form.monthlySalary}
+                onChange={(e) => update('monthlySalary', e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Salary currency</Label>
+              <Input
+                value={form.salaryCurrency}
+                onChange={(e) => update('salaryCurrency', e.target.value.toUpperCase())}
+              />
+            </div>
+            <div>
+              <Label>System role</Label>
+              <Select
+                value={form.roleNames?.[0] ?? 'EMPLOYEE'}
+                onValueChange={(v) => setForm((f) => ({ ...f, roleNames: [v] }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {roleOptions.map(([v, l]) => (
+                    <SelectItem key={v} value={v}>{l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="sm:col-span-2 rounded-md border p-3">
+              <p className="mb-2 text-sm font-medium">Emergency contact</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  placeholder="Contact number / name"
+                  value={form.emergencyContact}
+                  onChange={(e) => update('emergencyContact', e.target.value)}
+                />
+                <Input
+                  placeholder="Emergency address"
+                  value={form.emergencyAddress}
+                  onChange={(e) => update('emergencyAddress', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="sm:col-span-2">
+              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createEmployee.isPending}>
+                {createEmployee.isPending ? 'Creating...' : 'Create employee'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!actionType}
+        onOpenChange={(value) => !value && closeAction()}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {actionType === 'delete'
+                ? 'Delete employee?'
+                : actionType === 'deactivate'
+                  ? 'Deactivate employee?'
+                  : 'Reactivate employee?'}
+            </DialogTitle>
+            <DialogDescription>
+              {actionType === 'delete'
+                ? 'Permanent deletion is allowed only when the employee has no related HRMS history. Otherwise, deactivate the employee instead.'
+                : actionType === 'deactivate'
+                  ? 'The employee will become inactive and the account will be disabled. Existing HRMS history is retained.'
+                  : 'The employee will become active again and the account will be enabled.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={closeAction}>Cancel</Button>
+            <Button
+              variant={actionType === 'delete' ? 'destructive' : 'default'}
+              disabled={
+                deactivate.isPending ||
+                reactivate.isPending ||
+                remove.isPending
+              }
+              onClick={doAction}
+            >
+              {actionType === 'delete'
+                ? remove.isPending ? 'Deleting...' : 'Delete employee'
+                : actionType === 'deactivate'
+                  ? deactivate.isPending ? 'Deactivating...' : 'Deactivate'
+                  : reactivate.isPending ? 'Reactivating...' : 'Reactivate'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

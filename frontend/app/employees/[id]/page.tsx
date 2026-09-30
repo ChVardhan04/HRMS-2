@@ -77,7 +77,7 @@ export default function EmployeeProfilePage() {
     <AppShell title="Employee Profile">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Button variant="ghost" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /> Employees</Button>
+          <Button variant="ghost" onClick={() => router.replace(returnPage > 1 ? `/employees?page=${returnPage}` : '/employees')}><ArrowLeft className="h-4 w-4" /> Employees</Button>
           <div className="flex flex-wrap items-center gap-2">
             {canEdit && employee.user?.mustChangePassword && <Button variant="outline" onClick={() => resendActivation.mutate(id)} disabled={resendActivation.isPending}>{resendActivation.isPending ? 'Sending...' : 'Resend activation'}</Button>}
             {canEdit && employee.employmentStatus !== 'EXITED' && <Button variant="outline" onClick={() => setConfirm('deactivate')}><UserX className="h-4 w-4"/> Deactivate</Button>}

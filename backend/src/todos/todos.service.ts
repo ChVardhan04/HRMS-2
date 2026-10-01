@@ -147,11 +147,24 @@ export class TodosService {
     const workDay = await this.workdayService.getOrCreate(employeeId, today);
     if (!workDay.checkInAt) return [];
     const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-    const submittedStatuses = [
+    const submittedStatuses: DprStatus[] = [
       DprStatus.SUBMITTED,
       DprStatus.UNDER_REVIEW,
       DprStatus.APPROVED,
     ];
+    const submittedStatusSet = new Set<DprStatus>(submittedStatuses);
+
+    // Optional safety limit for carry-over (TODO_CARRYOVER_LOOKBACK_DAYS, 0/unset = no limit).
+    const lookbackDays = Number(process.env.TODO_CARRYOVER_LOOKBACK_DAYS ?? 0);
+    const carryoverCreatedAt =
+      lookbackDays > 0
+        ? { createdAt: { gte: new Date(today.getTime() - lookbackDays * 24 * 60 * 60 * 1000) } }
+        : {};
+    const notInSubmittedDpr = {
+      dprEntries: {
+        none: { dpr: { status: { in: submittedStatuses } } },
+      },
+    };
 
     const todos = await this.prisma.todo.findMany({
       where: {
@@ -160,12 +173,9 @@ export class TodosService {
         OR: [
           { dueDate: { gte: today, lt: tomorrow } },
           { workDayId: workDay.id },
-          {
-            dueDate: { lt: tomorrow },
-            dprEntries: {
-              none: { dpr: { status: { in: submittedStatuses } } },
-            },
-          },
+          { dueDate: { lt: tomorrow }, ...notInSubmittedDpr, ...carryoverCreatedAt },
+          // Tasks without a due date stay active until they are in a submitted DPR.
+          { dueDate: null, ...notInSubmittedDpr, ...carryoverCreatedAt },
         ],
       },
       include: {
@@ -177,7 +187,7 @@ export class TodosService {
     return todos.map((todo) => ({
       ...todo,
       canEditOrDelete: !todo.dprEntries.some((entry) =>
-        submittedStatuses.includes(entry.dpr.status),
+        submittedStatusSet.has(entry.dpr.status),
       ),
       dprEntries: undefined,
     }));
@@ -202,8 +212,9 @@ export class TodosService {
       todo.creatorId !== requesterId
     )
       throw new ForbiddenException("Not allowed to modify this task");
-    const submittedStatuses = [DprStatus.SUBMITTED, DprStatus.UNDER_REVIEW, DprStatus.APPROVED];
-    if (todo.dprEntries.some((entry) => submittedStatuses.includes(entry.dpr.status))) {
+    const submittedStatuses: DprStatus[] = [DprStatus.SUBMITTED, DprStatus.UNDER_REVIEW, DprStatus.APPROVED];
+    const submittedStatusSet = new Set<DprStatus>(submittedStatuses);
+    if (todo.dprEntries.some((entry) => submittedStatusSet.has(entry.dpr.status))) {
       throw new BadRequestException("This task is already part of a submitted DPR and cannot be edited.");
     }
     if (dto.status === TodoStatus.COMPLETED && todo.assigneeId !== requesterId)
@@ -245,8 +256,9 @@ export class TodosService {
     if (!isHr && todo.assigneeId !== requesterId && todo.creatorId !== requesterId) {
       throw new ForbiddenException("Not allowed to delete this task");
     }
-    const submittedStatuses = [DprStatus.SUBMITTED, DprStatus.UNDER_REVIEW, DprStatus.APPROVED];
-    if (todo.dprEntries.some((entry) => submittedStatuses.includes(entry.dpr.status))) {
+    const submittedStatuses: DprStatus[] = [DprStatus.SUBMITTED, DprStatus.UNDER_REVIEW, DprStatus.APPROVED];
+    const submittedStatusSet = new Set<DprStatus>(submittedStatuses);
+    if (todo.dprEntries.some((entry) => submittedStatusSet.has(entry.dpr.status))) {
       throw new BadRequestException("This task is already part of a submitted DPR and cannot be deleted.");
     }
 

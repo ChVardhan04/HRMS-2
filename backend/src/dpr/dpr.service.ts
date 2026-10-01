@@ -85,22 +85,34 @@ export class DprService {
 
   private async syncCarryoverTodosIntoDpr(dprId: string, workDayId: string, employeeId: string) {
     const dpr = await this.prisma.dPR.findUnique({ where: { id: dprId }, select: { status: true, lockedAt: true } });
-    if (!dpr || dpr.lockedAt || ![DprStatus.DRAFT, DprStatus.NEEDS_CHANGES, DprStatus.REJECTED].includes(dpr.status)) return;
+    const editableStatuses = new Set<DprStatus>([DprStatus.DRAFT, DprStatus.NEEDS_CHANGES, DprStatus.REJECTED]);
+    if (!dpr || dpr.lockedAt || !editableStatuses.has(dpr.status)) return;
 
     const today = this.workdayService.startOfDay();
     const workDay = await this.prisma.workDay.findUnique({ where: { id: workDayId }, select: { date: true } });
     if (!workDay || workDay.date.getTime() !== today.getTime()) return;
 
     const submittedStatuses = [DprStatus.SUBMITTED, DprStatus.UNDER_REVIEW, DprStatus.APPROVED];
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    // Optional safety limit for carry-over (TODO_CARRYOVER_LOOKBACK_DAYS, 0/unset = no limit).
+    const lookbackDays = Number(process.env.TODO_CARRYOVER_LOOKBACK_DAYS ?? 0);
+    const carryoverCreatedAt =
+      lookbackDays > 0
+        ? { createdAt: { gte: new Date(today.getTime() - lookbackDays * 24 * 60 * 60 * 1000) } }
+        : {};
     const carryovers = await this.prisma.todo.findMany({
       where: {
         assigneeId: employeeId,
         status: { not: "CANCELLED" },
         OR: [
-          { workDayId: { not: workDayId }, dueDate: { lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) } },
-          { workDayId: null, dueDate: { lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) } },
+          { workDayId: { not: workDayId }, dueDate: { lt: tomorrow } },
+          { workDayId: null, dueDate: { lt: tomorrow } },
+          // Tasks without a due date carry over until they are in a submitted DPR.
+          { workDayId: { not: workDayId }, dueDate: null },
+          { workDayId: null, dueDate: null },
         ],
         dprEntries: { none: { dpr: { status: { in: submittedStatuses } } } },
+        ...carryoverCreatedAt,
       },
       orderBy: { createdAt: "asc" },
     });

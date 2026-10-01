@@ -195,7 +195,7 @@ describe("KraService — metric weights and score calculation", () => {
 
       const scored = await (service as any).scoreMetrics(
         template([item("a", 100)]),
-        evidence,
+        { ...evidence, commitments: [{ alignmentStatus: "MATCHED" }] },
         "monthly",
       );
 

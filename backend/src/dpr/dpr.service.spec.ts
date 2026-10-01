@@ -3,6 +3,7 @@ import { DprService } from "./dpr.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { TaskCompletionAiService } from "../todos/task-completion-ai.service";
+import { WorkdayService } from "../workday/workday.service";
 
 /**
  * Focused unit test for the sync-engine conflict detection described in plan section 6.4.
@@ -37,6 +38,7 @@ describe("DprService", () => {
           provide: TaskCompletionAiService,
           useValue: { analyzeTask: jest.fn(), analyzeWorkDay: jest.fn() },
         },
+        { provide: WorkdayService, useValue: {} },
       ],
     }).compile();
 

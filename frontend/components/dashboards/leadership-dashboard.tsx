@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/shared/empty-state';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useTeamToday } from '@/features/workday/use-workday';
 import { PortalActivityTeamCard } from '@/components/attendance/portal-activity-team-card';
+import { PortalActivitySelfCard } from '@/components/attendance/portal-activity-self-card';
 
 export function LeadershipDashboard() {
   const { data, isLoading } = useQuery({ queryKey: ['reports', 'leadership-summary'], queryFn: () => api.get<any>('/reports/leadership-summary') });
@@ -25,6 +26,8 @@ export function LeadershipDashboard() {
         <StatCard label="Average KRA" value={data?.averageKra == null ? '-' : `${data.averageKra}%`} icon={Target} />
         <StatCard label="Open jobs" value={data?.openJobs ?? 0} icon={Briefcase} />
       </div>
+
+      <PortalActivitySelfCard />
 
       <PortalActivityTeamCard team={team} title="Company portal activity today" />
 

@@ -25,7 +25,7 @@ export function useUpdateTodo() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: any }) => api.patch(`/todos/${id}`, payload),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['todos'] }); toast({ title: 'To-Do updated', variant: 'success' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['todos'] }); qc.invalidateQueries({ queryKey: ['dpr'] }); toast({ title: 'To-Do updated', variant: 'success' }); },
     onError: (err: any) => toast({ title: 'Could not update To-Do', description: err.message, variant: 'destructive' }),
   });
 }
@@ -35,7 +35,7 @@ export function useDeleteTodo() {
   const { toast } = useToast();
   return useMutation({
     mutationFn: (id: string) => api.delete(`/todos/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['todos'] }); toast({ title: 'To-Do deleted', description: 'The incorrect task was removed.', variant: 'success' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['todos'] }); qc.invalidateQueries({ queryKey: ['dpr'] }); toast({ title: 'To-Do deleted', description: 'The incorrect task was removed.', variant: 'success' }); },
     onError: (err: any) => toast({ title: 'Could not delete To-Do', description: err.message, variant: 'destructive' }),
   });
 }

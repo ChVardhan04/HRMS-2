@@ -10,6 +10,7 @@ import { SaveDprDraftDto } from "./dto/dpr.dto";
 import { NotificationsService } from "../notifications/notifications.service";
 import { NotificationCategory } from "../notifications/notification-category.enum";
 import { TaskCompletionAiService } from "../todos/task-completion-ai.service";
+import { WorkdayService } from "../workday/workday.service";
 
 /**
  * DPR sits at the end of the sync chain: Attendance -> To-Do -> DPR -> Manager Review -> KRA.
@@ -29,6 +30,7 @@ export class DprService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private taskAi: TaskCompletionAiService,
+    private workdayService: WorkdayService,
   ) {}
 
   private buildAiSummary(todos: any[]) {
@@ -81,6 +83,46 @@ export class DprService {
     return dpr;
   }
 
+  private async syncCarryoverTodosIntoDpr(dprId: string, workDayId: string, employeeId: string) {
+    const dpr = await this.prisma.dPR.findUnique({ where: { id: dprId }, select: { status: true, lockedAt: true } });
+    if (!dpr || dpr.lockedAt || ![DprStatus.DRAFT, DprStatus.NEEDS_CHANGES, DprStatus.REJECTED].includes(dpr.status)) return;
+
+    const today = this.workdayService.startOfDay();
+    const workDay = await this.prisma.workDay.findUnique({ where: { id: workDayId }, select: { date: true } });
+    if (!workDay || workDay.date.getTime() !== today.getTime()) return;
+
+    const submittedStatuses = [DprStatus.SUBMITTED, DprStatus.UNDER_REVIEW, DprStatus.APPROVED];
+    const carryovers = await this.prisma.todo.findMany({
+      where: {
+        assigneeId: employeeId,
+        status: { not: "CANCELLED" },
+        OR: [
+          { workDayId: { not: workDayId }, dueDate: { lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) } },
+          { workDayId: null, dueDate: { lt: new Date(today.getTime() + 24 * 60 * 60 * 1000) } },
+        ],
+        dprEntries: { none: { dpr: { status: { in: submittedStatuses } } } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    for (const todo of carryovers) {
+      const existing = await this.prisma.dPREntry.findFirst({ where: { dprId, todoId: todo.id } });
+      if (existing) continue;
+      await this.prisma.dPREntry.create({
+        data: {
+          dprId,
+          todoId: todo.id,
+          project: todo.project,
+          description: todo.title,
+          hours: Number(todo.actualHours ?? 0),
+          output: todo.completionOutputSummary,
+          blocker: todo.incompleteReason,
+          isManualEntry: false,
+        },
+      });
+    }
+  }
+
   /** Called by TodosService.complete() — auto-fills/updates the draft DPR line item for a completed task. */
   async autoFillFromTodo(
     workDayId: string,
@@ -127,7 +169,10 @@ export class DprService {
   private async recalcHoursAndFlags(dprId: string) {
     const dpr = await this.prisma.dPR.findUniqueOrThrow({
       where: { id: dprId },
-      include: { entries: true, workDay: { include: { todos: true } } },
+      include: {
+        entries: { include: { todo: true } },
+        workDay: { include: { todos: true } },
+      },
     });
 
     const totalDprHours = dpr.entries.reduce(
@@ -140,9 +185,14 @@ export class DprService {
     });
 
     // Conflict 1: task hours vs DPR hours mismatch (per completed task with a linked entry).
-    const completedTasks = dpr.workDay.todos.filter(
-      (t) => t.status === "COMPLETED",
-    );
+    const entryCompletedTasks = dpr.entries
+      .map((entry) => entry.todo)
+      .filter((todo) => Boolean(todo && todo.status === "COMPLETED")) as any[];
+    const completedTasks = [
+      ...dpr.workDay.todos.filter((t) => t.status === "COMPLETED"),
+      ...entryCompletedTasks,
+    ].filter((task, index, list) => list.findIndex((candidate) => candidate.id === task.id) === index);
+
     let mismatch = false;
     const notes: string[] = [];
 
@@ -160,9 +210,9 @@ export class DprService {
       }
     }
 
-    // Conflict 2: completed task missing entirely from DPR.
-    const missing = completedTasks.filter(
-      (t) => !dpr.entries.some((e) => e.todoId === t.id),
+    // Conflict 2: a completed task from the current WorkDay must still be present in today's DPR.
+    const missing = dpr.workDay.todos.filter(
+      (t) => t.status === "COMPLETED" && !dpr.entries.some((e) => e.todoId === t.id),
     );
     if (missing.length > 0) {
       notes.push(
@@ -199,6 +249,9 @@ export class DprService {
     if (!isHr && !isManager && workDay.employeeId !== employeeId)
       throw new ForbiddenException("You are not allowed to view this DPR");
     const dpr = await this.getOrCreateDprForWorkDay(workDayId);
+    if (roles.includes(RoleName.EMPLOYEE) && workDay.employeeId === employeeId) {
+      await this.syncCarryoverTodosIntoDpr(dpr.id, workDayId, employeeId);
+    }
     const result = await this.prisma.dPR.findUnique({
       where: { id: dpr.id },
       include: {
@@ -260,11 +313,15 @@ export class DprService {
           );
         if (entry.todoId) {
           const todo = await tx.todo.findFirst({
-            where: { id: entry.todoId, workDayId },
+            where: {
+              id: entry.todoId,
+              assigneeId: employeeId,
+              status: { not: "CANCELLED" },
+            },
           });
           if (!todo)
             throw new BadRequestException(
-              "One of the selected tasks does not belong to this work day",
+              "One of the selected tasks does not belong to this employee",
             );
         }
         if (entry.id) {
@@ -370,6 +427,17 @@ export class DprService {
       where: { id: workDay.id },
       data: { dprStatus: DprStatus.SUBMITTED },
     });
+
+    const submittedTodoIds = (await this.prisma.dPREntry.findMany({
+      where: { dprId: dpr.id, todoId: { not: null } },
+      select: { todoId: true },
+    })).map((entry) => entry.todoId!).filter(Boolean);
+    if (submittedTodoIds.length) {
+      await this.prisma.todo.updateMany({
+        where: { id: { in: submittedTodoIds }, assigneeId: employeeId },
+        data: { includedInDpr: true },
+      });
+    }
 
     await this.prisma.dPRAuditEntry.create({
       data: {

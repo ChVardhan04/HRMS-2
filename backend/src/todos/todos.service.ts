@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { RoleName, TodoEodStatus, TodoStatus } from "@prisma/client";
+import { DprStatus, RoleName, TodoEodStatus, TodoStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { WorkdayService } from "../workday/workday.service";
 import { DprService } from "../dpr/dpr.service";
@@ -136,23 +136,51 @@ export class TodosService {
     };
   }
 
-  /** "Today" board — what check-in unlocks per the sync engine. */
+  /**
+   * Today's active task board. A task leaves the active board only after it has
+   * actually been included in a DPR that reached SUBMITTED/UNDER_REVIEW/APPROVED.
+   * Draft, rejected and needs-changes DPRs do not clear the task, so it can be
+   * carried into the next working day until the employee finally submits it.
+   */
   async today(employeeId: string) {
     const today = this.workdayService.startOfDay();
     const workDay = await this.workdayService.getOrCreate(employeeId, today);
     if (!workDay.checkInAt) return [];
     const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-    return this.prisma.todo.findMany({
+    const submittedStatuses = [
+      DprStatus.SUBMITTED,
+      DprStatus.UNDER_REVIEW,
+      DprStatus.APPROVED,
+    ];
+
+    const todos = await this.prisma.todo.findMany({
       where: {
         assigneeId: employeeId,
         status: { notIn: [TodoStatus.CANCELLED] },
         OR: [
           { dueDate: { gte: today, lt: tomorrow } },
           { workDayId: workDay.id },
+          {
+            dueDate: { lt: tomorrow },
+            dprEntries: {
+              none: { dpr: { status: { in: submittedStatuses } } },
+            },
+          },
         ],
       },
-      orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
+      include: {
+        dprEntries: { select: { dpr: { select: { status: true } } } },
+      },
+      orderBy: [{ priority: "desc" }, { dueDate: "asc" }, { createdAt: "asc" }],
     });
+
+    return todos.map((todo) => ({
+      ...todo,
+      canEditOrDelete: !todo.dprEntries.some((entry) =>
+        submittedStatuses.includes(entry.dpr.status),
+      ),
+      dprEntries: undefined,
+    }));
   }
 
   async update(
@@ -161,7 +189,10 @@ export class TodosService {
     dto: UpdateTodoDto,
     roles: string[] = [],
   ) {
-    const todo = await this.prisma.todo.findUnique({ where: { id } });
+    const todo = await this.prisma.todo.findUnique({
+      where: { id },
+      include: { dprEntries: { include: { dpr: { select: { status: true } } } } },
+    });
     if (!todo) throw new NotFoundException("Todo not found");
     const isHr =
       roles.includes(RoleName.HR_ADMIN) || roles.includes(RoleName.SUPER_ADMIN);
@@ -171,15 +202,16 @@ export class TodosService {
       todo.creatorId !== requesterId
     )
       throw new ForbiddenException("Not allowed to modify this task");
-    if (todo.includedInDpr || todo.eodStatus !== TodoEodStatus.PENDING) {
-      throw new BadRequestException("This task is already resolved and cannot be edited. Keep the history in the DPR.");
+    const submittedStatuses = [DprStatus.SUBMITTED, DprStatus.UNDER_REVIEW, DprStatus.APPROVED];
+    if (todo.dprEntries.some((entry) => submittedStatuses.includes(entry.dpr.status))) {
+      throw new BadRequestException("This task is already part of a submitted DPR and cannot be edited.");
     }
     if (dto.status === TodoStatus.COMPLETED && todo.assigneeId !== requesterId)
       throw new ForbiddenException(
         "Only the assignee can complete a task so the DPR stays synchronized",
       );
 
-    return this.prisma.todo.update({
+    const updated = await this.prisma.todo.update({
       where: { id },
       data: {
         ...dto,
@@ -187,22 +219,44 @@ export class TodosService {
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
       },
     });
+
+    // Keep any editable DPR draft entries synchronized with the task title/project.
+    await this.prisma.dPREntry.updateMany({
+      where: {
+        todoId: id,
+        dpr: { status: { notIn: submittedStatuses } },
+      },
+      data: {
+        description: updated.title,
+        project: updated.project,
+      },
+    });
+
+    return updated;
   }
 
   async remove(id: string, requesterId: string, roles: string[] = []) {
     const todo = await this.prisma.todo.findUnique({
       where: { id },
-      select: { id: true, assigneeId: true, creatorId: true, eodStatus: true, includedInDpr: true, status: true },
+      include: { dprEntries: { include: { dpr: { select: { status: true } } } } },
     });
     if (!todo) throw new NotFoundException("Todo not found");
     const isHr = roles.includes(RoleName.HR_ADMIN) || roles.includes(RoleName.SUPER_ADMIN);
     if (!isHr && todo.assigneeId !== requesterId && todo.creatorId !== requesterId) {
       throw new ForbiddenException("Not allowed to delete this task");
     }
-    if (todo.includedInDpr || todo.eodStatus !== TodoEodStatus.PENDING) {
-      throw new BadRequestException("This task is already part of the EOD/DPR record and cannot be deleted. Keep the history and edit it instead.");
+    const submittedStatuses = [DprStatus.SUBMITTED, DprStatus.UNDER_REVIEW, DprStatus.APPROVED];
+    if (todo.dprEntries.some((entry) => submittedStatuses.includes(entry.dpr.status))) {
+      throw new BadRequestException("This task is already part of a submitted DPR and cannot be deleted.");
     }
-    return this.prisma.todo.delete({ where: { id } });
+
+    // Draft/rejected/needs-changes DPR entries are not final history, so they can
+    // be removed together with an incorrectly created task. Submitted history is
+    // protected by the check above.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.dPREntry.deleteMany({ where: { todoId: id } });
+      return tx.todo.delete({ where: { id } });
+    });
   }
 
   /**
@@ -255,7 +309,7 @@ export class TodosService {
         completedAt: dto.outcome === "COMPLETED" ? new Date() : null,
         actualHours: dto.actualHours,
         workDayId: workDay.id,
-        includedInDpr: true,
+        includedInDpr: false,
         eodStatus: dto.outcome as TodoEodStatus,
         incompleteReason: dto.outcome === "INCOMPLETE" ? dto.incompleteReason?.trim() : null,
         completionOutputSummary: dto.outputSummary?.trim() || null,

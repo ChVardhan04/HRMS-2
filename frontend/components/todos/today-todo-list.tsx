@@ -269,12 +269,12 @@ export function TodayTodoList() {
                     </Button>
                   )}
 
-                  {todo.eodStatus === 'PENDING' && !todo.includedInDpr && (
+                  {todo.canEditOrDelete && (
                     <>
                       <Button size="icon" variant="ghost" title="Edit To-Do" onClick={() => { setEditingTodo(todo); setEditTitle(todo.title); setEditPriority(todo.priority ?? 'MEDIUM'); setEditDueDate(todo.dueDate ? new Date(todo.dueDate).toISOString().slice(0,16) : ''); }}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" title="Delete To-Do" onClick={() => { if (window.confirm('Delete this To-Do? This can only be done before it is resolved into the DPR.')) deleteTodo.mutate(todo.id); }}>
+                      <Button size="icon" variant="ghost" title="Delete To-Do" onClick={() => { if (window.confirm('Delete this To-Do? It can be deleted while its DPR has not been submitted.')) deleteTodo.mutate(todo.id); }}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </>

@@ -105,7 +105,7 @@ export function TodayDprCard() {
             <FileText className="h-4 w-4 text-primary" /> Today&apos;s DPR
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
-            One DPR per working day. All resolved To-Dos are automatically included.
+            One DPR per working day. Unsubmitted To-Dos are carried forward until you include them in a submitted DPR.
           </p>
         </div>
         {dpr && <StatusBadge status={dpr.status} />}
@@ -183,7 +183,7 @@ export function TodayDprCard() {
               <EmptyState
                 icon={FileText}
                 title="No To-Do entries yet"
-                description="Resolve today's To-Dos first. They will automatically appear here."
+                description="Today's and carried-forward To-Dos appear here. Update them, add the result, and submit the DPR."
               />
             ) : (
               <div className="space-y-3">
@@ -203,7 +203,9 @@ export function TodayDprCard() {
                               <Badge variant="outline">
                                 {task.eodStatus === 'COMPLETED'
                                   ? 'Completed'
-                                  : 'Incomplete'}
+                                  : task.eodStatus === 'INCOMPLETE'
+                                    ? 'Incomplete'
+                                    : 'Pending / Carry-over'}
                               </Badge>
                             )}
                           </div>

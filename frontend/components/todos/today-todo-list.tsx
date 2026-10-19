@@ -361,18 +361,17 @@ export function TodayTodoList() {
                 </div>
 
                 <div>
-                  <Label>Screenshot proof</Label>
+                  <Label>Task evidence / attachment</Label>
 
                   <label className="mt-1 flex cursor-pointer items-center gap-2 rounded-md border border-dashed p-3 text-sm">
                     <Upload className="h-4 w-4" />
 
                     {proof?.name ??
-                      'Upload PNG, JPG or WEBP screenshot'}
+                      'Upload any file type (any size)'}
 
                     <input
                       hidden
                       type="file"
-                      accept="image/png,image/jpeg,image/webp"
                       onChange={(e) =>
                         setProof(e.target.files?.[0])
                       }

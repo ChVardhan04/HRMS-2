@@ -27,6 +27,18 @@ export class LeaveController {
   }
 
   @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
+  @Get("admin/requests")
+  adminRequests(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("employeeId") employeeId?: string,
+    @Query("status") status?: string,
+    @Query("departmentId") departmentId?: string,
+  ) {
+    return this.leaveService.adminRequests({ from, to, employeeId, status, departmentId });
+  }
+
+  @Roles(RoleName.HR_ADMIN, RoleName.SUPER_ADMIN)
   @Patch("admin/balances/:employeeId/:leaveTypeId")
   setBalance(@Param("employeeId") employeeId: string, @Param("leaveTypeId") leaveTypeId: string, @Query("year") year: string, @Body() dto: SetLeaveBalanceDto) {
     return this.leaveService.setBalance(employeeId, leaveTypeId, Number(year) || new Date().getFullYear(), dto);

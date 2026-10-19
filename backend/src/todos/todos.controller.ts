@@ -92,14 +92,9 @@ export class TodosController {
 
 
   @Post(":id/resolve")
-  @UseInterceptors(
-    FileInterceptor("proof", {
-      limits: { fileSize: 5 * 1024 * 1024 },
-      fileFilter: (_req, file, cb) => {
-        cb(null, ["image/png", "image/jpeg", "image/webp"].includes(file.mimetype));
-      },
-    }),
-  )
+  // Accept any proof file type. No application-level size cap is set here.
+  // The uploaded file is sent to the configured storage adapter by the service.
+  @UseInterceptors(FileInterceptor("proof"))
   resolve(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id") id: string,

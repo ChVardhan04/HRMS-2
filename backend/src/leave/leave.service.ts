@@ -160,6 +160,55 @@ export class LeaveService {
     return { year, month, departmentId: departmentId ?? null, leaveTypes: await this.listTypes(), employees: rows };
   }
 
+  async adminRequests(filters: { from?: string; to?: string; employeeId?: string; status?: string; departmentId?: string }) {
+    const parseDate = (value?: string, endOfDay = false) => {
+      if (!value) return undefined;
+      const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
+      if (Number.isNaN(date.getTime())) throw new BadRequestException("Invalid leave date filter");
+      return date;
+    };
+    const from = parseDate(filters.from);
+    const to = parseDate(filters.to, true);
+    const validStatuses = Object.values(LeaveStatus) as string[];
+    if (filters.status && filters.status !== "ALL" && !validStatuses.includes(filters.status)) {
+      throw new BadRequestException("Invalid leave status filter");
+    }
+    const where: Prisma.LeaveRequestWhereInput = {
+      ...(to ? { startDate: { lte: to } } : {}),
+      ...(from ? { endDate: { gte: from } } : {}),
+      ...(filters.employeeId && filters.employeeId !== "ALL" ? { employeeId: filters.employeeId } : {}),
+      ...(filters.status && filters.status !== "ALL" ? { status: filters.status as LeaveStatus } : {}),
+      ...(filters.departmentId && filters.departmentId !== "ALL" ? { employee: { departmentId: filters.departmentId } } : {}),
+    };
+    const today = new Date();
+    const todayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const todayEnd = new Date(todayStart.getTime() + 86400000 - 1);
+    const [requests, todayRequests] = await Promise.all([
+      this.prisma.leaveRequest.findMany({
+        where,
+        include: {
+          leaveType: true,
+          employee: { select: { id: true, employeeCode: true, firstName: true, lastName: true, department: { select: { id: true, name: true } }, designation: { select: { title: true } } } },
+          manager: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+      }),
+      this.prisma.leaveRequest.findMany({
+        where: { startDate: { lte: todayEnd }, endDate: { gte: todayStart } },
+        select: { id: true, status: true },
+      }),
+    ]);
+    return {
+      requests,
+      todaySummary: {
+        total: todayRequests.length,
+        pending: todayRequests.filter((r) => r.status === LeaveStatus.PENDING || r.status === LeaveStatus.MANAGER_APPROVED).length,
+        approved: todayRequests.filter((r) => r.status === LeaveStatus.APPROVED).length,
+        rejected: todayRequests.filter((r) => r.status === LeaveStatus.REJECTED).length,
+      },
+    };
+  }
+
   async setBalance(employeeId: string, leaveTypeId: string, year: number, dto: SetLeaveBalanceDto) {
     const [employee, leaveType] = await Promise.all([
       this.prisma.employee.findUnique({ where: { id: employeeId } }),

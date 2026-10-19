@@ -30,3 +30,9 @@ export function useRejectLeave() { const qc=useQueryClient(); const {toast}=useT
 export function useCancelLeave() { const qc=useQueryClient(); const {toast}=useToast(); return useMutation({mutationFn:(id:string)=>api.patch(`/leave/${id}/cancel`),onSuccess:()=>{qc.invalidateQueries({queryKey:['leave']});toast({title:'Leave request cancelled',variant:'success'});},onError:(e:any)=>toast({title:'Could not cancel leave',description:e.message,variant:'destructive'})}); }
 export function useHrLeaveOverview(year:number,month:number,enabled=true,departmentId='') { return useQuery({queryKey:['leave','admin-overview',year,month,departmentId],queryFn:()=>api.get<any>(`/leave/admin/overview?year=${year}&month=${month}${departmentId?`&departmentId=${departmentId}`:''}`),enabled}); }
 export function useSetLeaveBalance() { const qc=useQueryClient(); const {toast}=useToast(); return useMutation({mutationFn:({employeeId,leaveTypeId,year,accrued,carriedForward}:{employeeId:string;leaveTypeId:string;year:number;accrued:number;carriedForward?:number})=>api.patch(`/leave/admin/balances/${employeeId}/${leaveTypeId}?year=${year}`,{accrued,carriedForward}),onSuccess:()=>{qc.invalidateQueries({queryKey:['leave']});toast({title:'Leave balance updated',variant:'success'});},onError:(e:any)=>toast({title:'Could not update balance',description:e.message,variant:'destructive'})}); }
+
+export function useHrLeaveRequests(filters: { from:string; to:string; employeeId:string; status:string; departmentId:string }, enabled=true) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key,value]) => { if (value && value !== 'ALL') params.set(key, value); });
+  return useQuery({ queryKey:['leave','admin-requests',filters], queryFn:()=>api.get<any>(`/leave/admin/requests?${params.toString()}`), enabled });
+}
